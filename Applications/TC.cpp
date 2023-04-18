@@ -58,7 +58,6 @@ void printSpParMat(SpParMat<IT, NT, SpDCCols<IT, NT>> &A)
     }
 }
 
-
 void TC(Mat &A, Vec &deg, Vec &triangles)
 {
     // @manish: assumes undirected graph
@@ -73,7 +72,7 @@ void TC(Mat &A, Vec &deg, Vec &triangles)
     cout << "n = " << n << endl;
 
     // convert adjacency matrix to unweighted
-    A.Apply([](int64_t x) { return 1; });
+    A.Apply([](int64_t x){ return 1; });
 
     triangles = Vec(A.getcommgrid(), n, 0);
     deg = Vec(A.getcommgrid(), n, 0);
@@ -83,11 +82,11 @@ void TC(Mat &A, Vec &deg, Vec &triangles)
 
     // twos = deg * deg
     Vec twos = deg;
-    twos.Apply([](int64_t x) { return x * x; });
+    twos.Apply([](int64_t x){ return x * x; });
 
     // triangles = SpMV(A, twos)
     triangles = SpMV<PlusTimesSRing<int64_t, int64_t>>(A, twos);
-    
+
     // result = Reduce(triangles, plus)
     int64_t result = triangles.Reduce(plus<int64_t>(), static_cast<int64_t>(0));
 
@@ -98,10 +97,9 @@ void TC(Mat &A, Vec &deg, Vec &triangles)
     // divide by 6 because each triangle is counted 3 times
     if (myrank == 0)
     {
-        cout << "triangles = " << result/6 << endl;
+        cout << "triangles = " << result / 6 << endl;
     }
 }
-
 
 int main(int argc, char *argv[])
 {
@@ -132,7 +130,7 @@ int main(int argc, char *argv[])
         delete DEL;
         int64_t removed = A->RemoveLoops();
 
-        Vec deg; // degree
+        Vec deg;       // degree
         Vec triangles; // triangles per vertex
 
         TC(*A, deg, triangles);
