@@ -17,52 +17,78 @@ double cblas_localspmvtime;
 using namespace std;
 using namespace combblas;
 
-// graph500 params
 #define EDGEFACTOR 16
-MTRand GlobalMT(123); // for reproducable result
+MTRand GlobalMT(123);
 
-// type definitions
-// typedef SpParMat<int64_t, int64_t, SpDCCols<int64_t, int64_t>> PSpMat_Int64;
+#define MAX_DIST std::numeric_limits<double>::max()
+using Mat = SpParMat<int64_t, double, SpDCCols<int64_t, double>>;
+using Vec = FullyDistVec<int64_t, double>;
 
-// SSSP configs
-#define MAX_DIST std::numeric_limits<int>::max()
-using Vec = FullyDistVec<int64_t, int64_t>;
+// print the SpParMat
+template <typename IT, typename NT>
+void printSpParMat(SpParMat<IT, NT, SpDCCols<IT, NT>> &A)
+{
+    // get local matrix
+    SpDCCols<IT, NT> localMat = A.seq();
+    int count = 0;
+    int total = 0;
 
-void SSSP(SpParMat<int64_t, int64_t, SpDCCols<int64_t, int64_t>> &A, int64_t source, Vec &dist)
+    // temporary vector of vector to store the matrix
+    vector<vector<NT>> temp(A.getnrow(), vector<NT>(A.getncol(), 0));
+
+    // use SpColIter to iterate over cols of local matrix
+    for (SpDCCols<int64_t, double>::SpColIter colit = A.seq().begcol(); colit != A.seq().endcol(); ++colit)
+    {
+        for (SpDCCols<int64_t, double>::SpColIter::NzIter nzit = A.seq().begnz(colit); nzit != A.seq().endnz(colit); ++nzit)
+        {
+            count++;
+            temp[nzit.rowid()][colit.colid()] = nzit.value();
+        }
+    }
+
+    // print the temp vector
+    for (auto row : temp)
+    {
+        for (auto col : row)
+        {
+            cout << setw(5) << col << " ";
+        }
+        cout << endl;
+    }
+}
+
+
+
+void SSSP(Mat &A, int64_t source, Vec &dist)
 {
     int nprocs, myrank;
     MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
     MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
 
-    // graph info
     int64_t n = A.getnrow();
     cout << "n = " << n << endl;
 
-    // initialize distance vector
     dist = Vec(A.getcommgrid(), n, MAX_DIST); // init distances to MAX_DIST
     dist.SetElement(source, 0);               // set source distance to 0
 
-    Vec ones = Vec(A.getcommgrid(), n, 1);
-
     cout << "Starting SSSP ..." << endl;
 
-    // bellman-ford algorithm
-
-    for (int64_t i = 0; i < n; i++)
+    // bellman-ford
+    for (int64_t i = 0; i < n - 1; i++)
     {
-        // For each edge (u, v) with weight w, update dist[v] = min(dist[v], dist[u] + w)
-
-        // dist = A * dist (relaxation step to update distances)
-        // @manish: WIP -- can't find the right SpMV function!!!!
-        SpMV(A, dist, dist, false);
+        // printSpParMat(A);
+        // dist.DebugPrint();
+        // @manish: A is sparse but dist is dense. So runs a dense SpMV.
+        dist = SpMV<MinPlusSRing<double, double>>(A, dist);
     }
 
-    // print shortest path distances
     for (int i = 0; i < n; i++)
     {
         cout << "Shortest distance from " << source << " to " << i << " is " << dist[i] << endl;
     }
 }
+
+
 
 int main(int argc, char *argv[])
 {
@@ -70,22 +96,11 @@ int main(int argc, char *argv[])
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
     MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
-    // if(argc < 2){
-    //     if(myrank == 0){
-    //         cout << "Usage: ./sssp <scale> <source> " << endl;
-    //         cout << "Example: mpirun -np 4 ./sssp 3 5" << endl;
-    //     }
-    //     MPI_Finalize();
-    //     return -1;
-    // }
+    // TODO: Add loaders for binary graph files
     {
-        int n = 6;
         int source = 0;
 
-        SpParMat<int64_t, int64_t, SpDCCols<int64_t, int64_t>> A; // adjacency matrix (undirected graph)
-        Vec dist;                                                 // distance vector from source to all nodes
-
-        unsigned scale = 3; // 2^scale vertices
+        unsigned scale = 10; // 2^scale vertices
         double initiator[4] = {.57, .19, .19, .05};
 
         cout << "[Graph500] generating random graph ..." << endl;
@@ -101,12 +116,19 @@ int main(int argc, char *argv[])
         ostringstream tinfo;
         tinfo << "Generation took " << t02 - t01 << " seconds" << endl;
 
-        SpParMat<int64_t, int64_t, SpDCCols<int64_t, int64_t>> *ABool = new SpParMat<int64_t, int64_t, SpDCCols<int64_t, int64_t>>(*DEL, false);
+        // adjacency matrix
+        Mat *A = new Mat(*DEL, false);
         delete DEL;
-        int64_t removed = ABool->RemoveLoops();
-        ABool->PrintInfo();
+        int64_t removed = A->RemoveLoops();
 
-        SSSP(*ABool, source, dist);
+        // distance vector from source to all nodes
+        Vec dist;
+        A->Transpose();
+
+        // set diagonal to 0
+        A->AddLoops(0, true);
+
+        SSSP(*A, source, dist);
     }
 
     MPI_Finalize();
