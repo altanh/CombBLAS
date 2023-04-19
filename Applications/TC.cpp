@@ -58,6 +58,36 @@ void printSpParMat(SpParMat<IT, NT, SpDCCols<IT, NT>> &A)
     }
 }
 
+// symmetricize the matrix
+template <typename PARMAT>
+void Symmetricize(PARMAT & A)
+{
+	PARMAT AT = A;
+	AT.Transpose();
+	A += AT;
+}
+
+
+// get lower triangular matrix
+template <typename PARMAT>
+PARMAT GetLowerTriangular(PARMAT & A)
+{
+    PARMAT L = A;
+    for (SpDCCols<int64_t, int64_t>::SpColIter colit = L.seq().begcol(); colit != L.seq().endcol(); ++colit)
+    {
+        for (SpDCCols<int64_t, int64_t>::SpColIter::NzIter nzit = L.seq().begnz(colit); nzit != L.seq().endnz(colit); ++nzit)
+        {
+            if (nzit.rowid() < colit.colid())
+            {
+                nzit.value() = 0;
+            }
+        }
+    }
+    return L;
+}
+
+
+
 void TC(Mat &A, Vec &deg, Vec &triangles)
 {
     // @manish: assumes undirected graph
@@ -71,34 +101,32 @@ void TC(Mat &A, Vec &deg, Vec &triangles)
     int64_t n = A.getnrow();
     cout << "n = " << n << endl;
 
-    // convert adjacency matrix to unweighted
+    // convert adjacency matrix to unweighted and undirected
     A.Apply([](int64_t x){ return 1; });
-
-    triangles = Vec(A.getcommgrid(), n, 0);
-    deg = Vec(A.getcommgrid(), n, 0);
-
-    // deg = Reduce(A, plus)
-    deg = A.Reduce(Column, plus<int64_t>(), static_cast<int64_t>(0));
-
-    // twos = deg * deg
-    Vec twos = deg;
-    twos.Apply([](int64_t x){ return x * x; });
-
-    // triangles = SpMV(A, twos)
-    triangles = SpMV<PlusTimesSRing<int64_t, int64_t>>(A, twos);
-
-    // result = Reduce(triangles, plus)
-    int64_t result = triangles.Reduce(plus<int64_t>(), static_cast<int64_t>(0));
+    Symmetricize(A);
 
     // printSpParMat(A);
-    // deg.DebugPrint();
-    // triangles.DebugPrint();
 
-    // divide by 6 because each triangle is counted 3 times
-    if (myrank == 0)
-    {
-        cout << "triangles = " << result / 6 << endl;
-    }
+    // L = tril(A)
+    // set all entries above the diagonal to 0
+    // entries above the diagonal have rowid < colid
+    Mat L = GetLowerTriangular(A);
+    printSpParMat(L);
+
+    // C<L> = L * L
+    Mat Ltemp = L;
+    Mat C = Mult_AnXBn_Synch<PlusTimesSRing<int64_t, int64_t>, int64_t, SpDCCols<int64_t, int64_t>>(L, Ltemp);
+    printSpParMat(C);
+
+    // TODO: reduce C to a scalar to get the number of triangles
+
+    // triangles = Vec(A.getcommgrid(), n, 0);
+    // int64_t result = triangles.Reduce(plus<int64_t>(), static_cast<int64_t>(0));
+
+    // if (myrank == 0)
+    // {
+    //     cout << "triangles = " << result << endl;
+    // }
 }
 
 int main(int argc, char *argv[])
@@ -109,7 +137,7 @@ int main(int argc, char *argv[])
     MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
     // TODO: Add loaders for binary graph files
     {
-        unsigned scale = 10; // 2^scale vertices
+        unsigned scale = 2; // 2^scale vertices
         double initiator[4] = {.57, .19, .19, .05};
 
         cout << "[Graph500] generating random graph ..." << endl;
