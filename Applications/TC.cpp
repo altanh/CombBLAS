@@ -96,9 +96,8 @@ void TC(Mat &A)
     cout << "n = " << n << endl;
 
     // convert adjacency matrix to unweighted and undirected
-    A.Apply([](int64_t x)
-            { return 1; });
     Symmetricize(A);
+    A.Apply([](int64_t x){ return 1; });
     // printSpParMat(A);
 
     // L = tril(A)
