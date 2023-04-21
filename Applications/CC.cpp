@@ -47,7 +47,7 @@
 #include "CombBLAS/CombBLAS.h"
 #include "CC.h"
 
-#include "WG.h"
+#include "DGB.h"
 
 using namespace std;
 using namespace combblas;
@@ -142,14 +142,7 @@ int main(int argc, char *argv[])
 
         if (isMatrixMarket)
         {
-            // A.ParallelReadMM(ifilename, base, maximum<double>());
-            // check if filename ends with .bin64
-            if (std::string::npos != ifilename.find(".bin64")) {
-                BinHandler<int64_t, double> handler;
-                A.ReadDistribute(ifilename, /*master=*/0, /*nonum=*/true, /*handler=*/handler, /*transpose=*/false, /*pario=*/true);
-            } else {
-                A.ParallelReadMM(ifilename, base, maximum<double>());
-            }
+            load_mtx<int64_t, double, decltype(A)>(&A, ifilename, false);
         }
         else
         {

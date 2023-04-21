@@ -7,46 +7,12 @@
 
 #include <chrono>
 #include <iostream>
+#include <sstream>
 #include "CombBLAS/CombBLAS.h"
 
-#include "WG.h"
+#include "DGB.h"
 
 using namespace combblas;
-
-class Timer
-{
-public:
-    Timer(int myrank) : start_(std::chrono::steady_clock::now()), myrank_(myrank) {}
-
-    void reset()
-    {
-        start_ = std::chrono::steady_clock::now();
-    }
-
-    double elapsed(bool print = true) const
-    {
-        double s = std::chrono::duration<double>(std::chrono::steady_clock::now() - start_).count();
-        if (print && myrank_ == 0)
-        {
-            std::cout << "[rank " << myrank_ << "] elapsed time: " << s << "s" << std::endl;
-        }
-        return s;
-    }
-
-    template <typename T>
-    const Timer &operator<<(T v) const
-    {
-        if (myrank_ == 0)
-        {
-            std::cout << v;
-        }
-        return *this;
-    }
-
-private:
-    std::chrono::steady_clock::time_point start_;
-    int myrank_;
-};
 
 const double alpha = 0.85;
 
@@ -67,10 +33,7 @@ int main(int argc, char **argv)
 
     if (argc < 2)
     {
-        if (myrank == 0)
-        {
-            std::cout << "Usage: " << argv[0] << " <input_graph> [eps] [max_iter] [save]" << std::endl;
-        }
+        MAIN_COUT("Usage: " << argv[0] << " <input_graph> [eps] [max_iter] [save]" << std::endl);
         MPI_Finalize();
         return 1;
     }
@@ -92,14 +55,12 @@ int main(int argc, char **argv)
         save = std::stoi(argv[4]);
     }
 
-    if (myrank == 0)
-    {
-        std::cout << "----------------------------------------" << std::endl;
-        std::cout << "input = " << argv[1] << std::endl;
-        std::cout << "eps = " << eps << std::endl;
-        std::cout << "Process Grid (p x p x t): " << sqrt(nprocs) << " x " << sqrt(nprocs) << " x " << nthreads << endl;
-        std::cout << "----------------------------------------" << std::endl;
-    }
+    MAIN_COUT("----------------------------------------" << std::endl);
+    MAIN_COUT("input = " << argv[1] << std::endl);
+    MAIN_COUT("eps = " << eps << std::endl);
+    MAIN_COUT("max_iter = " << max_iter << std::endl);
+    MAIN_COUT("Process Grid (p x p x t): " << sqrt(nprocs) << " x " << sqrt(nprocs) << " x " << nthreads << endl);
+    MAIN_COUT("----------------------------------------" << std::endl);
 
     { // begin main scope
 
@@ -112,41 +73,33 @@ int main(int argc, char **argv)
         using Vec = FullyDistVec<int64_t, double>;
         using SpVec = FullyDistSpVec<int64_t, double>;
 
-        Timer timer(myrank);
-        timer << "reading matrix...\n";
+        Timer timer(myrank, "load_matrix");
+        MAIN_COUT("reading matrix..." << std::endl);
         Mat A(fullWorld);
-        // check if binary
-        if (input_graph.find(".bin64") != std::string::npos)
-        {
-            BinHandler<int64_t, double> handler;
-            A.ReadDistribute(input_graph, /*master=*/0, /*nonum=*/true, /*handler=*/handler, /*transpose=*/false, /*pario=*/true);
-        }
-        else
-        {
-            A.ParallelReadMM(input_graph, true, maximum<double>());
-        }
+        load_mtx<int64_t, double, Mat>(&A, input_graph, /*transpose=*/true);
         timer.elapsed();
-        timer << "load imbalance = " << A.LoadImbalance() << "\n";
+        MAIN_COUT("load imbalance = " << A.LoadImbalance() << std::endl);
 
         int64_t n = A.getnrow();
         double inv_n = 1.0 / static_cast<double>(n);
         double err = inv_n;
 
-        timer << "n = " << n << "\n";
+        MAIN_COUT("  n = " << n << std::endl);
+        MAIN_COUT("nnz = " << A.getnnz() << std::endl);
 
         // p <- 1/n
-        timer << "initializing dense vectors...\n";
-        timer.reset();
+        MAIN_COUT("initializing dense vectors..." << std::endl);
+        timer.reset("vec_init");
         Vec p(A.getcommgrid(), n, inv_n);
 
         // NOTE(@altanh): using ArithSR::add instead of std::plus<double>() leads to a segfault
         //                when using multiple MPI ranks...
-        Vec od_dense = A.Reduce(Dim::Row, std::plus<double>(), 0.0);
+        Vec od_dense = A.Reduce(Dim::Column, std::plus<double>(), 0.0);
 
         // print number of dangling nodes
         int64_t num_dangling = od_dense.Count([](double x)
                                               { return x == 0.0; });
-        timer << "found " << num_dangling << " dangling nodes\n";
+        MAIN_COUT("found " << num_dangling << " dangling nodes" << std::endl);
 
         // TODO(@altanh): is there a better way? also, should I be using SpVec?
         // SpVec od = SpVec(od_dense, [](double x) { return x != 0.0; });
@@ -166,14 +119,8 @@ int main(int argc, char **argv)
         // SpVec od_inv(od);
         // od_inv.Apply([](double x) { return 1.0 / x; });
 
-        // transpose A for the vector-matrix product later (we'll use SpMV)
-        timer << "transposing A...\n";
-        timer.reset();
-        A.Transpose();
-        timer.elapsed();
-
-        timer.reset();
-        timer << "running pagerank...\n";
+        MAIN_COUT("starting PageRank..." << std::endl);
+        timer.reset("pagerank");
 
         int iter = 0;
         while (err > eps && iter < max_iter)
@@ -213,10 +160,7 @@ int main(int argc, char **argv)
         }
 
         double pr_time = timer.elapsed(false);
-        if (myrank == 0)
-        {
-            std::cout << "PageRank stopped after " << iter << " iterations in " << pr_time << " seconds" << std::endl;
-        }
+        MAIN_COUT("PageRank stopped after " << iter << " iterations in " << pr_time << " seconds" << std::endl);
 
         if (save)
         {

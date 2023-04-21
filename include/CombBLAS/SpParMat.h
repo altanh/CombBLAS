@@ -275,7 +275,7 @@ public:
 	};
 	
    	template <typename _BinaryOperation>
-    	void ParallelReadMM (const std::string & filename, bool onebased, _BinaryOperation BinOp);
+    void ParallelReadMM (const std::string & filename, bool onebased, _BinaryOperation BinOp, bool transpose = false);
     
     template <class HANDLER>
     void ParallelWriteMM(const std::string & filename, bool onebased, HANDLER handler);
