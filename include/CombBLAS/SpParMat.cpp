@@ -3977,7 +3977,7 @@ FullyDistVec<IT,std::array<char, MAXVERTNAME> > SpParMat< IT,NT,DER >::ReadGener
 //! Replaces ReadDistribute for properly load balanced input in matrix market format
 template <class IT, class NT, class DER>
 template <typename _BinaryOperation>
-void SpParMat< IT,NT,DER >::ParallelReadMM (const std::string & filename, bool onebased, _BinaryOperation BinOp)
+void SpParMat< IT,NT,DER >::ParallelReadMM (const std::string & filename, bool onebased, _BinaryOperation BinOp, bool transpose)
 {
     int32_t type = -1;
     int32_t symmetric = 0;
@@ -4030,7 +4030,13 @@ void SpParMat< IT,NT,DER >::ParallelReadMM (const std::string & filename, bool o
         int ret_code;
         if ((ret_code = mm_read_mtx_crd_size(f, &nrows, &ncols, &nonzeros, &linesread)) !=0)  // ABAB: mm_read_mtx_crd_size made 64-bit friendly
             exit(1);
-    
+
+		// for now we only support transposing square matrices during load
+		if (transpose && nrows != ncols) {
+			std::cout << "Transposing during load only supported for square matrices" << std::endl;
+			exit(1);
+		}
+
         std::cout << "Total number of nonzeros expected across all processors is " << nonzeros << std::endl;
 
     }
@@ -4095,10 +4101,12 @@ void SpParMat< IT,NT,DER >::ParallelReadMM (const std::string & filename, bool o
     std::vector< std::vector < std::tuple<LIT,LIT,NT> > > data(nprocs);
     
     LIT locsize = rows.size();   // remember: locsize != entriesread (unless the matrix is unsymmetric)
-    for(LIT i=0; i<locsize; ++i)
+	std::vector<LIT> *trows = transpose ? &cols : &rows;
+	std::vector<LIT> *tcols = transpose ? &rows : &cols;
+	for(LIT i=0; i<locsize; ++i)
     {
         LIT lrow, lcol;
-        int owner = Owner(nrows, ncols, rows[i], cols[i], lrow, lcol);
+        int owner = Owner(nrows, ncols, (*trows)[i], (*tcols)[i], lrow, lcol);
         data[owner].push_back(std::make_tuple(lrow,lcol,vals[i]));
     }
     std::vector<LIT>().swap(rows);
