@@ -617,17 +617,18 @@ void SpParMat< IT,NT,DER >::Dump(std::string filename) const
 
 
 template <class IT, class NT, class DER>
-void SpParMat< IT,NT,DER >::ParallelBinaryWrite(std::string filename) const
+void SpParMat< IT,NT,DER >::ParallelBinaryWrite(std::string filename, bool pattern) const
 {
     int myrank = commGrid->GetRank();
     int nprocs = commGrid->GetSize();
     IT totalm = getnrow();
     IT totaln = getncol();
     IT totnnz = getnnz();
-        
+
+	const size_t nt_size = pattern ? 0 : sizeof(NT);
     
     const int64_t headersize = 52; // 52 is the size of the header, 4 characters + 6*8 integer space
-    int64_t elementsize = 2*sizeof(IT)+sizeof(NT);
+    int64_t elementsize = 2 * sizeof(IT) + nt_size;
     int64_t localentries =  getlocalnnz();
     int64_t localbytes = localentries*elementsize ;   // localsize in bytes
     if(myrank == 0)
@@ -646,7 +647,8 @@ void SpParMat< IT,NT,DER >::ParallelBinaryWrite(std::string filename) const
         char start[5] = "HKDT";
         uint64_t hdr[6];
         hdr[0] = 2;    // version: 2.0
-        hdr[1] = sizeof(NT);   // object size
+        // hdr[1] = sizeof(NT);   // object size
+		hdr[1] = 2 * sizeof(IT) + nt_size;   // object size
         hdr[2] = 0;    // format: binary
         hdr[3] = totalm;    // number of rows
         hdr[4] = totaln;    // number of columns
@@ -672,8 +674,10 @@ void SpParMat< IT,NT,DER >::ParallelBinaryWrite(std::string filename) const
             NT glvalue = nzit.value();
             std::memmove(localdata+writtensofar, &glrowid, sizeof(IT));
             std::memmove(localdata+writtensofar+sizeof(IT), &glcolid, sizeof(IT));
-            std::memmove(localdata+writtensofar+2*sizeof(IT), &glvalue, sizeof(NT));
-            writtensofar += (2*sizeof(IT) + sizeof(NT));
+			if (!pattern) {
+				std::memmove(localdata+writtensofar+2*sizeof(IT), &glvalue, nt_size);
+			}
+            writtensofar += 2*sizeof(IT) + nt_size;
         }
     }
 #ifdef IODEBUG

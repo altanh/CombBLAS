@@ -94,6 +94,7 @@ int main(int argc, char **argv)
 
         // NOTE(@altanh): using ArithSR::add instead of std::plus<double>() leads to a segfault
         //                when using multiple MPI ranks...
+        // TODO(@altanh): support promoted accumulator for reduce (e.g. bool -> double)
         Vec od_dense = A.Reduce(Dim::Column, std::plus<double>(), 0.0);
 
         // print number of dangling nodes

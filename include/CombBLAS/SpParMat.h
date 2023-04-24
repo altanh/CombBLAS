@@ -281,7 +281,7 @@ public:
     void ParallelWriteMM(const std::string & filename, bool onebased, HANDLER handler);
     void ParallelWriteMM(const std::string & filename, bool onebased) { ParallelWriteMM(filename, onebased, ScalarReadSaveHandler()); };
 
-    void ParallelBinaryWrite(std::string filename) const;
+    void ParallelBinaryWrite(std::string filename, bool pattern = false) const;
     
     template <typename _BinaryOperation>
     FullyDistVec<IT,std::array<char, MAXVERTNAME>> ReadGeneralizedTuples(const std::string&, _BinaryOperation);
