@@ -4458,7 +4458,7 @@ void SpParMat< IT,NT,DER >::ReadDistribute (const std::string & filename, int ma
 			oput << "Total nnz: " << total_nnz << " OFFSET : " << read_offset << " entries to read: " << entriestoread << std::endl;
 			oput.close();
 			#endif
-			
+
 			AllocateSetBuffers(rows, cols, vals,  rcurptrs, ccurptrs, rowneighs, colneighs, buffpercolneigh);
 			ReadAllMine(binfile, rows, cols, vals, localtuples, rcurptrs, ccurptrs, rdispls, cdispls, m_perproc, n_perproc, 
 				rowneighs, colneighs, buffperrowneigh, buffpercolneigh, entriestoread, handler, rankinrow, transpose);
@@ -4522,7 +4522,7 @@ void SpParMat< IT,NT,DER >::ReadDistribute (const std::string & filename, int ma
             oput << "Total nnz: " << total_nnz << " total_m : " << total_m << " recvcount: " << recvcount << std::endl;
             oput.close();
             #endif
-            
+
 			// create space for incoming data ... 
 			IT * temprows = new IT[recvcount];
 			IT * tempcols = new IT[recvcount];
@@ -4636,9 +4636,14 @@ void SpParMat<IT,NT,DER>::ReadAllMine(FILE * binfile, IT * & rows, IT * & cols, 
 	IT cnz = 0;
 	IT temprow, tempcol;
 	NT tempval;
-	int finishedglobal = 1;
-	while(cnz < entriestoread && !feof(binfile))	// this loop will execute at least once
+	int finishedglobal = 0;
+	while(cnz < entriestoread)	// this loop will execute at least once
 	{
+		if (feof(binfile))	// should not happen
+		{
+			std::cerr << "Error: Reached end of file before reading " << entriestoread << " entries" << std::endl;
+			exit(EXIT_FAILURE);
+		}
 		handler.binaryfill(binfile, temprow , tempcol, tempval);
         
 		if (transpose)

@@ -124,7 +124,7 @@ int main(int argc, char *argv[])
         A.AddLoops(0, true);
         timer.elapsed();
 
-        Vec dist;
+        Vec dist(A.getcommgrid());
         SSSP(A, source, dist, &timer);
 
         std::string timing_output = input_graph;

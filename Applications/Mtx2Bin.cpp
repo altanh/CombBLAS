@@ -31,6 +31,8 @@ int main(int argc, char **argv)
     using IT = int64_t;
     using NT = float;
 
+    size_t expected_filesize = 0;
+
     {
         std::shared_ptr<CommGrid> fullWorld;
         fullWorld.reset(new CommGrid(MPI_COMM_WORLD, 0, 0));
@@ -44,10 +46,24 @@ int main(int argc, char **argv)
         load_mtx<IT, NT, decltype(A)>(&A, input_mtx, false);
         T.elapsed();
 
+        // print statistics of loaded matrix
+        MAIN_COUT("input matrix: " << A.getnrow() << " x " << A.getncol() << ", nnz = " << A.getnnz() << std::endl);
+
         MAIN_COUT("writing output..." << std::endl);
         T.reset("write");
         A.ParallelBinaryWrite(output_bin, /*pattern=*/false);
         T.elapsed();
+
+        expected_filesize = A.getnnz() * (2 * sizeof(IT) + sizeof(NT)) + 52;
+    }
+
+    // check the output file has the correct size
+    std::ifstream f(output_bin, std::ios::binary | std::ios::ate);
+    if (f.tellg() != expected_filesize)
+    {
+        MAIN_COUT("ERROR: output file has incorrect size" << std::endl);
+        MPI_Finalize();
+        return 1;
     }
 
     MPI_Finalize();

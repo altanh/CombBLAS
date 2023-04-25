@@ -157,7 +157,7 @@ struct BinHandler
 
     size_t entrylength()
     {
-        return 2 * sizeof(IT) + (pattern ? 0 : sizeof(NT));
+        return 2 * sizeof(IT) + (pattern ? 0 : sizeof(FNT));
     }
 };
 
@@ -167,7 +167,8 @@ void load_mtx(Mat *A, const std::string &filename, bool transpose, bool pattern 
     if (filename.find(".bin64") != std::string::npos)
     {
         BinHandler<IT, NT, FNT> handler(pattern);
-        A->ReadDistribute(filename, 0, true, handler, transpose, true);
+        A->ReadDistribute(filename, 0, /*nonum=*/false, handler, transpose, true);
+        MPI_Barrier(MPI_COMM_WORLD);
     }
     else
     {
