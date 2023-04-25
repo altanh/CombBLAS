@@ -145,7 +145,7 @@ int main(int argc, char *argv[])
         timer.reset("load_matrix");
         if (isMatrixMarket)
         {
-            load_mtx<int64_t, double, decltype(A)>(&A, ifilename, false);
+            load_mtx<int64_t, double, decltype(A), float>(&A, ifilename, false);
         }
         else
         {

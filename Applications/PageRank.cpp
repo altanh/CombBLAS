@@ -78,7 +78,10 @@ int main(int argc, char **argv)
         Mat A(fullWorld);
         MAIN_COUT("reading matrix..." << std::endl);
         timer.reset("load");
-        load_mtx<int64_t, double, Mat>(&A, input_graph, /*transpose=*/true);
+        load_mtx<int64_t, double, Mat, float>(&A, input_graph, /*transpose=*/true);
+        // set values to 1.0
+        A.Apply([](double x)
+                { return 1.0; });
         timer.elapsed();
         MAIN_COUT("load imbalance = " << A.LoadImbalance() << std::endl);
 

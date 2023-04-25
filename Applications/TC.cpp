@@ -113,7 +113,7 @@ int main(int argc, char *argv[])
         Mat A(fullWorld);
 
         timer.reset("load");
-        load_mtx<int64_t, int64_t, decltype(A)>(&A, input_graph, false);
+        load_mtx<int64_t, int64_t, decltype(A), float>(&A, input_graph, false);
         timer.elapsed();
 
         MAIN_COUT("n = " << A.getnrow() << ", nnz = " << A.getnnz() << std::endl);

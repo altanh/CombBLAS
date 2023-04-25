@@ -112,19 +112,28 @@ private:
 
 // utility stuff for loading wg2mtx binary graphs
 
-template <typename IT, typename NT>
+template <typename IT, typename NT, typename FNT = NT>
 struct BinHandler
 {
     constexpr static NT ONE = static_cast<NT>(1);
+    bool pattern;
+
+    BinHandler(bool pattern) : pattern(pattern) {}
 
     void binaryfill(FILE *f, IT &r, IT &c, NT &v)
     {
         IT rc[2];
+        FNT vv = static_cast<FNT>(1);
 
         fread(rc, sizeof(IT), 2, f);
+        if (!pattern)
+        {
+            fread(&vv, sizeof(FNT), 1, f);
+        }
+
         r = rc[0] - 1;
         c = rc[1] - 1;
-        v = ONE;
+        v = static_cast<NT>(vv);
     }
 
     NT getNoNum(IT r, IT c)
@@ -135,7 +144,9 @@ struct BinHandler
     template <typename c, typename t>
     NT read(std::basic_istream<c, t> &is, IT row, IT col)
     {
-        return ONE;
+        NT v;
+        is >> v;
+        return v;
     }
 
     template <typename c, typename t>
@@ -146,16 +157,16 @@ struct BinHandler
 
     size_t entrylength()
     {
-        return 2 * sizeof(IT);
+        return 2 * sizeof(IT) + (pattern ? 0 : sizeof(NT));
     }
 };
 
-template <typename IT, typename NT, typename Mat>
-void load_mtx(Mat *A, const std::string &filename, bool transpose)
+template <typename IT, typename NT, typename Mat, typename FNT = NT>
+void load_mtx(Mat *A, const std::string &filename, bool transpose, bool pattern = false)
 {
     if (filename.find(".bin64") != std::string::npos)
     {
-        BinHandler<IT, NT> handler;
+        BinHandler<IT, NT, FNT> handler(pattern);
         A->ReadDistribute(filename, 0, true, handler, transpose, true);
     }
     else

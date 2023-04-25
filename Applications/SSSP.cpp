@@ -117,7 +117,7 @@ int main(int argc, char *argv[])
         Mat A(fullWorld);
 
         timer.reset("load");
-        load_mtx<int64_t, double, decltype(A)>(&A, input_graph, true);
+        load_mtx<int64_t, double, decltype(A), float>(&A, input_graph, true);
         timer.elapsed();
 
         timer.reset("set_diag");
