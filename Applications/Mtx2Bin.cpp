@@ -29,13 +29,13 @@ int main(int argc, char **argv)
     MAIN_COUT("output binary file: " << output_bin << std::endl);
 
     using IT = int64_t;
-    using NT = double;
+    using NT = float;
 
     {
         std::shared_ptr<CommGrid> fullWorld;
         fullWorld.reset(new CommGrid(MPI_COMM_WORLD, 0, 0));
         // read the input matrix
-        SpParMat<int64_t, double, SpDCCols<int64_t, double>> A(fullWorld);
+        SpParMat<IT, NT, SpDCCols<IT, NT>> A(fullWorld);
 
         Timer T(myrank);
 
@@ -46,7 +46,7 @@ int main(int argc, char **argv)
 
         MAIN_COUT("writing output..." << std::endl);
         T.reset("write");
-        A.ParallelBinaryWrite(output_bin, /*pattern=*/true);
+        A.ParallelBinaryWrite(output_bin, /*pattern=*/false);
         T.elapsed();
     }
 
