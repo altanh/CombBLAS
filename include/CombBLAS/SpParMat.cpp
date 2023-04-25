@@ -4695,6 +4695,12 @@ void SpParMat<IT,NT,DER>::ReadAllMine(FILE * binfile, IT * & rows, IT * & cols, 
 			}
 		} // end_if for "send buffer is full" case 
 		++cnz;
+		// print progress in 5% increments
+		if (cnz % (entriestoread/20) == 0 && commGrid->GetRank() == 0)
+		{
+			// print percentage of entries read
+			std::cout << "read " << (cnz*100)/entriestoread << "%" << std::endl;
+		}
 	}
 
 	// signal the end to row neighbors

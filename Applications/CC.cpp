@@ -137,9 +137,12 @@ int main(int argc, char *argv[])
             }
         }
 
+        Timer timer(myrank);
+
         double tIO = MPI_Wtime();
         Dist::MPI_DCCols A(MPI_COMM_WORLD); // construct object
 
+        timer.reset("load_matrix");
         if (isMatrixMarket)
         {
             load_mtx<int64_t, double, decltype(A)>(&A, ifilename, false);
@@ -149,7 +152,9 @@ int main(int argc, char *argv[])
             A.ReadGeneralizedTuples(ifilename, maximum<double>());
         }
         A.PrintInfo();
+        timer.elapsed();
 
+        timer.reset("symmetrize");
         Dist::MPI_DCCols AT = A;
         AT.Transpose();
         if (!(AT == A))
@@ -157,6 +162,7 @@ int main(int argc, char *argv[])
             SpParHelper::Print("Symmatricizing an unsymmetric input matrix.\n");
             A += AT;
         }
+        timer.elapsed();
         A.PrintInfo();
 
         ostringstream outs;
@@ -168,10 +174,13 @@ int main(int argc, char *argv[])
             // randomly permute for load balance
             if (A.getnrow() == A.getncol())
             {
+                timer.reset("random_permute");
                 FullyDistVec<int64_t, int64_t> p(A.getcommgrid());
                 p.iota(A.getnrow(), 0);
                 p.RandPerm();
+                // NOTE(@altanh): this gives incorrect results with 1 MPI rank
                 (A)(p, p, true); // in-place permute to save memory
+                timer.elapsed();
                 SpParHelper::Print("Applied symmetric permutation.\n");
             }
             else
@@ -198,7 +207,9 @@ int main(int argc, char *argv[])
         SpParHelper::Print(outs.str());
         double t1 = MPI_Wtime();
         int64_t nCC = 0;
+        timer.reset("connected_components");
         FullyDistVec<int64_t, int64_t> cclabels = CC(A, nCC);
+        timer.elapsed();
 
         double t2 = MPI_Wtime();
         string outname = ifilename + ".components";
@@ -209,8 +220,14 @@ int main(int argc, char *argv[])
         // SpParHelper::Print(outs.str());
         // HistCC(cclabels, nCC);
 
+        timer.reset("reduce");
         int64_t nclusters = cclabels.Reduce(maximum<int64_t>(), (int64_t)0);
         nclusters++; // because of zero based indexing for clusters
+        timer.elapsed();
+
+        std::string timing_output = ifilename;
+        timing_output.replace(timing_output.find_last_of("."), std::string::npos, ".cc_time.csv");
+        timer.save(timing_output);
 
         double tend = MPI_Wtime();
         stringstream s2;

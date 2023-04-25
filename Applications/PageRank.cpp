@@ -73,9 +73,11 @@ int main(int argc, char **argv)
         using Vec = FullyDistVec<int64_t, double>;
         using SpVec = FullyDistSpVec<int64_t, double>;
 
-        Timer timer(myrank, "load_matrix");
-        MAIN_COUT("reading matrix..." << std::endl);
+        Timer timer(myrank);
+
         Mat A(fullWorld);
+        MAIN_COUT("reading matrix..." << std::endl);
+        timer.reset("load");
         load_mtx<int64_t, double, Mat>(&A, input_graph, /*transpose=*/true);
         timer.elapsed();
         MAIN_COUT("load imbalance = " << A.LoadImbalance() << std::endl);
@@ -162,6 +164,10 @@ int main(int argc, char **argv)
 
         double pr_time = timer.elapsed(false);
         MAIN_COUT("PageRank stopped after " << iter << " iterations in " << pr_time << " seconds" << std::endl);
+
+        std::string timing_output = input_graph;
+        timing_output.replace(timing_output.find_last_of('.'), std::string::npos, ".pr_time.csv");
+        timer.save(timing_output);
 
         if (save)
         {
