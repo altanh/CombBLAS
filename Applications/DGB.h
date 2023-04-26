@@ -220,3 +220,17 @@ void printSpParMat(combblas::SpParMat<IT, NT, combblas::SpDCCols<IT, NT>> &A)
         }
     }
 }
+
+void print_process_grid() {
+    int nprocs, myrank;
+    MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+    MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
+    int nthreads = 1;
+#ifdef THREADED
+#pragma omp parallel
+    {
+        nthreads = omp_get_num_threads();
+    }
+#endif
+    MAIN_COUT("Process Grid (p x p x t): " << sqrt(nprocs) << " x " << sqrt(nprocs) << " x " << nthreads << endl);
+}

@@ -12,7 +12,7 @@ int main(int argc, char **argv)
 
     if (argc < 2)
     {
-        std::cout << "Usage: " << argv[0] << " <input_mtx> [output_bin]" << std::endl;
+        std::cout << "Usage: " << argv[0] << " <input_mtx> [output_bin] [pattern]" << std::endl;
         MPI_Finalize();
         return 1;
     }
@@ -23,6 +23,12 @@ int main(int argc, char **argv)
     if (argc > 2)
     {
         output_bin = argv[2];
+    }
+
+    bool pattern = false;
+    if (argc > 3)
+    {
+        pattern = std::stoi(argv[3]);
     }
 
     MAIN_COUT("input MatrixMarket file: " << input_mtx << std::endl);
@@ -51,7 +57,7 @@ int main(int argc, char **argv)
 
         MAIN_COUT("writing output..." << std::endl);
         T.reset("write");
-        A.ParallelBinaryWrite(output_bin, /*pattern=*/false);
+        A.ParallelBinaryWrite(output_bin, /*pattern=*/pattern);
         T.elapsed();
 
         expected_filesize = A.getnnz() * (2 * sizeof(IT) + sizeof(NT)) + 52;
