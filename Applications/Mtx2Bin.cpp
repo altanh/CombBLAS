@@ -33,10 +33,12 @@ int main(int argc, char **argv)
 
     MAIN_COUT("input MatrixMarket file: " << input_mtx << std::endl);
     MAIN_COUT("output binary file: " << output_bin << std::endl);
+    MAIN_COUT("output is pattern: " << pattern << std::endl);
 
     using IT = int64_t;
     using NT = float;
 
+    const size_t nt_size = pattern ? 0 : sizeof(NT);
     size_t expected_filesize = 0;
 
     {
@@ -60,7 +62,7 @@ int main(int argc, char **argv)
         A.ParallelBinaryWrite(output_bin, /*pattern=*/pattern);
         T.elapsed();
 
-        expected_filesize = A.getnnz() * (2 * sizeof(IT) + sizeof(NT)) + 52;
+        expected_filesize = A.getnnz() * (2 * sizeof(IT) + nt_size) + 52;
     }
 
     // check the output file has the correct size
