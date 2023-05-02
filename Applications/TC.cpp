@@ -81,6 +81,8 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    print_process_grid();
+
     string input_graph = argv[1];
 
     // TODO: Add loaders for binary graph files
@@ -113,7 +115,7 @@ int main(int argc, char *argv[])
         Mat A(fullWorld);
 
         timer.reset("load");
-        load_mtx<int64_t, int64_t, decltype(A), float>(&A, input_graph, false);
+        load_mtx<int64_t, int64_t, decltype(A)>(&A, input_graph, /*transpose=*/false, /*pattern=*/true);
         timer.elapsed();
 
         MAIN_COUT("n = " << A.getnrow() << ", nnz = " << A.getnnz() << std::endl);

@@ -31,6 +31,8 @@ int main(int argc, char **argv)
         pattern = std::stoi(argv[3]);
     }
 
+    print_process_grid();
+
     MAIN_COUT("input MatrixMarket file: " << input_mtx << std::endl);
     MAIN_COUT("output binary file: " << output_bin << std::endl);
     MAIN_COUT("output is pattern: " << pattern << std::endl);

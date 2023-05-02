@@ -59,7 +59,7 @@ int main(int argc, char **argv)
     MAIN_COUT("input = " << argv[1] << std::endl);
     MAIN_COUT("eps = " << eps << std::endl);
     MAIN_COUT("max_iter = " << max_iter << std::endl);
-    MAIN_COUT("Process Grid (p x p x t): " << sqrt(nprocs) << " x " << sqrt(nprocs) << " x " << nthreads << endl);
+    print_process_grid();
     MAIN_COUT("----------------------------------------" << std::endl);
 
     { // begin main scope
@@ -78,7 +78,7 @@ int main(int argc, char **argv)
         Mat A(fullWorld);
         MAIN_COUT("reading matrix..." << std::endl);
         timer.reset("load");
-        load_mtx<int64_t, double, Mat, float>(&A, input_graph, /*transpose=*/true);
+        load_mtx<int64_t, double, Mat>(&A, input_graph, /*transpose=*/true, /*pattern=*/true);
         // set values to 1.0
         A.Apply([](double x)
                 { return 1.0; });

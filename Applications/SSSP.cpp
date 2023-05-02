@@ -20,6 +20,7 @@ MTRand GlobalMT(123);
 using Mat = SpParMat<int64_t, double, SpDCCols<int64_t, double>>;
 using Vec = FullyDistVec<int64_t, double>;
 
+// TODO(@altanh): delta-stepping?
 void SSSP(Mat &A, int64_t source, Vec &dist, Timer *timer)
 {
     int myrank = get_myrank();
@@ -74,6 +75,8 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    print_process_grid();
+
     string input_graph = argv[1];
     int64_t source = atoll(argv[2]);
 
@@ -117,7 +120,7 @@ int main(int argc, char *argv[])
         Mat A(fullWorld);
 
         timer.reset("load");
-        load_mtx<int64_t, double, decltype(A), float>(&A, input_graph, true);
+        load_mtx<int64_t, double, decltype(A), float>(&A, input_graph, /*transpose=*/true, /*pattern=*/false);
         timer.elapsed();
 
         timer.reset("set_diag");

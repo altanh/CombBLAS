@@ -37,6 +37,8 @@
 #include <string>
 #include <sstream>
 
+#include "DGB.h"
+
 int cblas_splits;
 
 double cblas_alltoalltime;
@@ -45,7 +47,7 @@ double cblas_mergeconttime;
 double cblas_transvectime;
 double cblas_localspmvtime;
 
-#define ITERS 16
+#define ITERS 1
 #define EDGEFACTOR 16
 using namespace std;
 using namespace combblas;
@@ -152,7 +154,8 @@ int main(int argc, char* argv[])
 
 		if(string(argv[1]) == string("Input")) // input option
 		{
-			A.ReadDistribute(string(argv[2]), 0);	// read it from file
+			// A.ReadDistribute(string(argv[2]), 0);	// read it from file
+			load_mtx<int64_t, bool, decltype(A)>(&A, string(argv[2]), /*transpose=*/false, /*pattern=*/true);
 			SpParHelper::Print("Read input\n");
 
 			PSpMat_Int64 * G = new PSpMat_Int64(A); 
@@ -395,8 +398,10 @@ int main(int argc, char* argv[])
 		vector<int64_t> loccandints(ITERS);
 		if(myrank == 0)
 		{
-			for(int i=0; i<ITERS; ++i)
-				loccands[i] = M.rand();
+			for(int i=0; i<ITERS; ++i) {
+				// loccands[i] = M.rand();
+				loccands[i] = stoi(argv[3]);  // use source from command line
+			}
 			copy(loccands.begin(), loccands.end(), ostream_iterator<double>(cout," ")); cout << endl;
 			transform(loccands.begin(), loccands.end(), loccands.begin(), bind2nd( multiplies<double>(), nver ));
 			
