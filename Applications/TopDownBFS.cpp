@@ -148,8 +148,8 @@ int main(int argc, char* argv[])
 		// Declare objects
 		PSpMat_Bool A(fullWorld);
 		PSpMat_s32p64 Aeff(fullWorld);
-		FullyDistVec<int64_t, int64_t> degrees(fullWorld);	// degrees of vertices (including multi-edges and self-loops)
-		FullyDistVec<int64_t, int64_t> nonisov(fullWorld);	// id's of non-isolated (connected) vertices
+		// FullyDistVec<int64_t, int64_t> degrees(fullWorld);	// degrees of vertices (including multi-edges and self-loops)
+		// FullyDistVec<int64_t, int64_t> nonisov(fullWorld);	// id's of non-isolated (connected) vertices
 		unsigned scale;
 		OptBuf<int32_t, int64_t> optbuf;	// let indices be 32-bits
 		bool scramble = false;
@@ -162,22 +162,22 @@ int main(int argc, char* argv[])
 			timer.elapsed();
 			SpParHelper::Print("Read input\n");
 
-			timer.reset("degrees");
-			PSpMat_Int64 * G = new PSpMat_Int64(A); 
-			G->Reduce(degrees, Row, plus<int64_t>(), static_cast<int64_t>(0));	// identity is 0 
-			delete G;
-			timer.elapsed();
+			// timer.reset("degrees");
+			// PSpMat_Int64 * G = new PSpMat_Int64(A); 
+			// G->Reduce(degrees, Row, plus<int64_t>(), static_cast<int64_t>(0));	// identity is 0 
+			// delete G;
+			// timer.elapsed();
 
 			timer.reset("symmetricize");
 			Symmetricize(A);	// A += A';
 			timer.elapsed();
 
 			timer.reset("prune");
-			FullyDistVec<int64_t, int64_t> * ColSums = new FullyDistVec<int64_t, int64_t>(A.getcommgrid());
-			A.Reduce(*ColSums, Column, plus<int64_t>(), static_cast<int64_t>(0)); 	// plus<int64_t> matches the type of the output vector
-			nonisov = ColSums->FindInds(bind2nd(greater<int64_t>(), 0));	// only the indices of non-isolated vertices
-			delete ColSums;
-			A = A(nonisov, nonisov);
+			// FullyDistVec<int64_t, int64_t> * ColSums = new FullyDistVec<int64_t, int64_t>(A.getcommgrid());
+			// A.Reduce(*ColSums, Column, plus<int64_t>(), static_cast<int64_t>(0)); 	// plus<int64_t> matches the type of the output vector
+			// nonisov = ColSums->FindInds(bind2nd(greater<int64_t>(), 0));	// only the indices of non-isolated vertices
+			// delete ColSums;
+			// A = A(nonisov, nonisov);
 			Aeff = PSpMat_s32p64(A);
 			A.FreeMemory();
 			timer.elapsed();
@@ -191,6 +191,7 @@ int main(int argc, char* argv[])
                         Aeff.ActivateThreading(cblas_splits);
                 #endif
 		}
+		/*
 		else if(string(argv[1]) == string("Binary"))
 		{
 			uint64_t n, m;
@@ -382,6 +383,7 @@ int main(int argc, char* argv[])
 			k1timeinfo << (t2-t1) - (redtf-redts) << " seconds elapsed for Kernel #1" << endl;
 			SpParHelper::Print(k1timeinfo.str());
 		}
+		*/
 		Aeff.PrintInfo();
 		float balance = Aeff.LoadImbalance();
 		ostringstream outs;
@@ -392,13 +394,14 @@ int main(int argc, char* argv[])
 		double t1 = MPI_Wtime();
 
 		// Now that every remaining vertex is non-isolated, randomly pick ITERS many of them as starting vertices
-		#ifndef NOPERMUTE
-		degrees = degrees(nonisov);	// fix the degrees array too
-		degrees.PrintInfo("Degrees array");
-		#endif
+		// #ifndef NOPERMUTE
+		// degrees = degrees(nonisov);	// fix the degrees array too
+		// degrees.PrintInfo("Degrees array");
+		// #endif
 		// degrees.DebugPrint();
 		FullyDistVec<int64_t, int64_t> Cands(ITERS, 0);
-		double nver = (double) degrees.TotalLength();
+		// double nver = (double) degrees.TotalLength();
+		double nver = (double) Aeff.getncol();
 
 #ifdef DETERMINISTIC
 		MTRand M(1);
@@ -464,24 +467,24 @@ int main(int argc, char* argv[])
 				MPI_Barrier(MPI_COMM_WORLD);
 				double t2 = MPI_Wtime();
 	
-				FullyDistSpVec<int64_t, int64_t> parentsp = parents.Find(bind2nd(greater<int64_t>(), -1));
-				parentsp.Apply(myset<int64_t>(1));
+				// FullyDistSpVec<int64_t, int64_t> parentsp = parents.Find(bind2nd(greater<int64_t>(), -1));
+				// parentsp.Apply(myset<int64_t>(1));
 	
 				// we use degrees on the directed graph, so that we don't count the reverse edges in the teps score
-				int64_t nedges = EWiseMult(parentsp, degrees, false, (int64_t) 0).Reduce(plus<int64_t>(), (int64_t) 0);
+				// int64_t nedges = EWiseMult(parentsp, degrees, false, (int64_t) 0).Reduce(plus<int64_t>(), (int64_t) 0);
 	
-				ostringstream outnew;
-				outnew << i << "th starting vertex was " << Cands[i] << endl;
-				outnew << "Number iterations: " << iterations << endl;
-				outnew << "Number of vertices found: " << parentsp.Reduce(plus<int64_t>(), (int64_t) 0) << endl; 
-				outnew << "Number of edges traversed: " << nedges << endl;
-				outnew << "BFS time: " << t2-t1 << " seconds" << endl;
-				outnew << "MTEPS: " << static_cast<double>(nedges) / (t2-t1) / 1000000.0 << endl;
-				outnew << "Total communication (average so far): " << (cblas_allgathertime + cblas_alltoalltime) / (i+1) << endl;
-				TIMES[i] = t2-t1;
-				EDGES[i] = nedges;
-				MTEPS[i] = static_cast<double>(nedges) / (t2-t1) / 1000000.0;
-				SpParHelper::Print(outnew.str());
+				// ostringstream outnew;
+				// outnew << i << "th starting vertex was " << Cands[i] << endl;
+				// outnew << "Number iterations: " << iterations << endl;
+				// outnew << "Number of vertices found: " << parentsp.Reduce(plus<int64_t>(), (int64_t) 0) << endl; 
+				// outnew << "Number of edges traversed: " << nedges << endl;
+				// outnew << "BFS time: " << t2-t1 << " seconds" << endl;
+				// outnew << "MTEPS: " << static_cast<double>(nedges) / (t2-t1) / 1000000.0 << endl;
+				// outnew << "Total communication (average so far): " << (cblas_allgathertime + cblas_alltoalltime) / (i+1) << endl;
+				// TIMES[i] = t2-t1;
+				// EDGES[i] = nedges;
+				// MTEPS[i] = static_cast<double>(nedges) / (t2-t1) / 1000000.0;
+				// SpParHelper::Print(outnew.str());
 				timer.elapsed();
 			}
 			SpParHelper::Print("Finished\n");
