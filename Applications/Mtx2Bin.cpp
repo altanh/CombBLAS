@@ -1,5 +1,5 @@
 #include "CombBLAS/CombBLAS.h"
-#include "DGB.h"
+#include "DGB_CombBLAS.h"
 
 using namespace combblas;
 
@@ -31,7 +31,7 @@ int main(int argc, char **argv)
         pattern = std::stoi(argv[3]);
     }
 
-    print_process_grid();
+    dgb::print_process_grid();
 
     MAIN_COUT("input MatrixMarket file: " << input_mtx << std::endl);
     MAIN_COUT("output binary file: " << output_bin << std::endl);
@@ -49,11 +49,11 @@ int main(int argc, char **argv)
         // read the input matrix
         SpParMat<IT, NT, SpDCCols<IT, NT>> A(fullWorld);
 
-        Timer T(myrank);
+        dgb::Timer T;
 
         MAIN_COUT("reading input..." << std::endl);
         T.reset("read");
-        load_mtx<IT, NT, decltype(A)>(&A, input_mtx, false);
+        dgb::load_mtx<IT, NT, decltype(A)>(&A, input_mtx, false);
         T.elapsed();
 
         // print statistics of loaded matrix

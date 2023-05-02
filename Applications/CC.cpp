@@ -47,7 +47,7 @@
 #include "CombBLAS/CombBLAS.h"
 #include "CC.h"
 
-#include "DGB.h"
+#include "DGB_CombBLAS.h"
 
 using namespace std;
 using namespace combblas;
@@ -137,7 +137,7 @@ int main(int argc, char *argv[])
             }
         }
 
-        Timer timer(myrank);
+        dgb::Timer timer;
 
         double tIO = MPI_Wtime();
         Dist::MPI_DCCols A(MPI_COMM_WORLD); // construct object
@@ -145,7 +145,7 @@ int main(int argc, char *argv[])
         timer.reset("load_matrix");
         if (isMatrixMarket)
         {
-            load_mtx<int64_t, double, decltype(A)>(&A, ifilename, /*transpose=*/false, /*pattern=*/true);
+            dgb::load_mtx<int64_t, double, decltype(A)>(&A, ifilename, /*transpose=*/false, /*pattern=*/true);
         }
         else
         {
@@ -225,9 +225,7 @@ int main(int argc, char *argv[])
         nclusters++; // because of zero based indexing for clusters
         timer.elapsed();
 
-        std::string timing_output = ifilename;
-        timing_output.replace(timing_output.find_last_of("."), std::string::npos, ".cc_time.csv");
-        timer.save(timing_output);
+        timer.save(dgb::get_timer_output(ifilename, "COMBBLAS", "cc"));
 
         double tend = MPI_Wtime();
         stringstream s2;

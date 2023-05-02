@@ -10,7 +10,7 @@
 #include <string>
 #include <sstream>
 
-#include "DGB.h"
+#include "DGB_CombBLAS.h"
 
 using namespace std;
 using namespace combblas;
@@ -38,7 +38,7 @@ void to_tril(PARMAT *A)
     A->PruneI([](const std::tuple<int64_t, int64_t, int64_t> &t){ return std::get<0>(t) < std::get<1>(t); }, true);
 }
 
-void TC(Mat &L, Timer *timer)
+void TC(Mat &L, dgb::Timer *timer)
 {
     int nprocs, myrank;
     MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
@@ -81,7 +81,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    print_process_grid();
+    dgb::print_process_grid();
 
     string input_graph = argv[1];
 
@@ -108,14 +108,14 @@ int main(int argc, char *argv[])
         // delete DEL;
         // int64_t removed = A->RemoveLoops();
 
-        Timer timer(myrank);
+        dgb::Timer timer;
 
         shared_ptr<CommGrid> fullWorld;
         fullWorld.reset(new CommGrid(MPI_COMM_WORLD, 0, 0));
         Mat A(fullWorld);
 
         timer.reset("load");
-        load_mtx<int64_t, int64_t, decltype(A)>(&A, input_graph, /*transpose=*/false, /*pattern=*/true);
+        dgb::load_mtx<int64_t, int64_t, decltype(A)>(&A, input_graph, /*transpose=*/false, /*pattern=*/true);
         timer.elapsed();
 
         MAIN_COUT("n = " << A.getnrow() << ", nnz = " << A.getnnz() << std::endl);
@@ -133,9 +133,7 @@ int main(int argc, char *argv[])
 
         TC(A, &timer);
 
-        std::string timing_output = input_graph;
-        timing_output.replace(timing_output.find_last_of('.'), std::string::npos, ".tc_time.csv");
-        timer.save(timing_output);
+        timer.save(dgb::get_timer_output(input_graph, "COMBBLAS", "tc"));
     }
 
     MPI_Finalize();

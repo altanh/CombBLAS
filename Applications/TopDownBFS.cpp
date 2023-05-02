@@ -37,7 +37,7 @@
 #include <string>
 #include <sstream>
 
-#include "DGB.h"
+#include "DGB_CombBLAS.h"
 
 int cblas_splits;
 
@@ -122,6 +122,8 @@ int main(int argc, char* argv[])
 	int cblas_splits = 1;	
 #endif
     
+	dgb::Timer timer;
+
 	MPI_Comm_size(MPI_COMM_WORLD,&nprocs);
 	MPI_Comm_rank(MPI_COMM_WORLD,&myrank);
 	if(argc < 3)
@@ -155,14 +157,22 @@ int main(int argc, char* argv[])
 		if(string(argv[1]) == string("Input")) // input option
 		{
 			// A.ReadDistribute(string(argv[2]), 0);	// read it from file
-			load_mtx<int64_t, bool, decltype(A)>(&A, string(argv[2]), /*transpose=*/false, /*pattern=*/true);
+			timer.reset("load");
+			dgb::load_mtx<int64_t, bool, decltype(A)>(&A, argv[2], /*transpose=*/false, /*pattern=*/true);
+			timer.elapsed();
 			SpParHelper::Print("Read input\n");
 
+			timer.reset("degrees");
 			PSpMat_Int64 * G = new PSpMat_Int64(A); 
 			G->Reduce(degrees, Row, plus<int64_t>(), static_cast<int64_t>(0));	// identity is 0 
 			delete G;
+			timer.elapsed();
 
+			timer.reset("symmetricize");
 			Symmetricize(A);	// A += A';
+			timer.elapsed();
+
+			timer.reset("prune");
 			FullyDistVec<int64_t, int64_t> * ColSums = new FullyDistVec<int64_t, int64_t>(A.getcommgrid());
 			A.Reduce(*ColSums, Column, plus<int64_t>(), static_cast<int64_t>(0)); 	// plus<int64_t> matches the type of the output vector
 			nonisov = ColSums->FindInds(bind2nd(greater<int64_t>(), 0));	// only the indices of non-isolated vertices
@@ -170,6 +180,7 @@ int main(int argc, char* argv[])
 			A = A(nonisov, nonisov);
 			Aeff = PSpMat_s32p64(A);
 			A.FreeMemory();
+			timer.elapsed();
 			SpParHelper::Print("Symmetricized and pruned\n");
 
                         Aeff.OptimizeForGraph500(optbuf);               // Should be called before threading is activated
@@ -416,7 +427,9 @@ int main(int argc, char* argv[])
 		}
 
 		#define MAXTRIALS 1
-		for(int trials =0; trials < MAXTRIALS; trials++)	// try different algorithms for BFS
+		const int maxtrials = dgb::get_trials("COMBBLAS");
+
+		for(int trials =0; trials < maxtrials; trials++)	// try different algorithms for BFS
 		{
 			cblas_allgathertime = 0;
 			cblas_alltoalltime = 0;
@@ -428,6 +441,7 @@ int main(int argc, char* argv[])
 			double MTEPS[ITERS]; double INVMTEPS[ITERS]; double TIMES[ITERS]; double EDGES[ITERS];
 			for(int i=0; i<ITERS; ++i)
 			{
+				timer.reset("bfs");
 				// FullyDistVec ( shared_ptr<CommGrid> grid, IT globallen, NT initval);
 				FullyDistVec<int64_t, int64_t> parents ( Aeff.getcommgrid(), Aeff.getncol(), (int64_t) -1);	// identity is -1
 
@@ -468,11 +482,13 @@ int main(int argc, char* argv[])
 				EDGES[i] = nedges;
 				MTEPS[i] = static_cast<double>(nedges) / (t2-t1) / 1000000.0;
 				SpParHelper::Print(outnew.str());
+				timer.elapsed();
 			}
 			SpParHelper::Print("Finished\n");
 			ostringstream os;
 			MPI_Pcontrol(-1,"BFS");
 			
+			timer.save(dgb::get_timer_output(argv[2], "COMBBLAS", "bfs"));
 
 			os << "Per iteration communication times: " << endl;
 			os << "AllGatherv: " << cblas_allgathertime / ITERS << endl;

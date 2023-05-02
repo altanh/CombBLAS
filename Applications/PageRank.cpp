@@ -10,7 +10,7 @@
 #include <sstream>
 #include "CombBLAS/CombBLAS.h"
 
-#include "DGB.h"
+#include "DGB_CombBLAS.h"
 
 using namespace combblas;
 
@@ -59,7 +59,7 @@ int main(int argc, char **argv)
     MAIN_COUT("input = " << argv[1] << std::endl);
     MAIN_COUT("eps = " << eps << std::endl);
     MAIN_COUT("max_iter = " << max_iter << std::endl);
-    print_process_grid();
+    dgb::print_process_grid();
     MAIN_COUT("----------------------------------------" << std::endl);
 
     { // begin main scope
@@ -73,12 +73,12 @@ int main(int argc, char **argv)
         using Vec = FullyDistVec<int64_t, double>;
         using SpVec = FullyDistSpVec<int64_t, double>;
 
-        Timer timer(myrank);
+        dgb::Timer timer;
 
         Mat A(fullWorld);
         MAIN_COUT("reading matrix..." << std::endl);
         timer.reset("load");
-        load_mtx<int64_t, double, Mat>(&A, input_graph, /*transpose=*/true, /*pattern=*/true);
+        dgb::load_mtx<int64_t, double, Mat>(&A, input_graph, /*transpose=*/true, /*pattern=*/true);
         // set values to 1.0
         A.Apply([](double x)
                 { return 1.0; });
@@ -94,7 +94,7 @@ int main(int argc, char **argv)
 
         // p <- 1/n
         MAIN_COUT("initializing dense vectors..." << std::endl);
-        timer.reset("vec_init");
+        timer.reset("init_vec");
         Vec p(A.getcommgrid(), n, inv_n);
 
         // NOTE(@altanh): using ArithSR::add instead of std::plus<double>() leads to a segfault
@@ -168,9 +168,7 @@ int main(int argc, char **argv)
         double pr_time = timer.elapsed(false);
         MAIN_COUT("PageRank stopped after " << iter << " iterations in " << pr_time << " seconds" << std::endl);
 
-        std::string timing_output = input_graph;
-        timing_output.replace(timing_output.find_last_of('.'), std::string::npos, ".pr_time.csv");
-        timer.save(timing_output);
+        timer.save(dgb::get_timer_output(input_graph, "COMBBLAS", "pr"));
 
         if (save)
         {

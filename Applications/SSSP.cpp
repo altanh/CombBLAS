@@ -8,7 +8,7 @@
 #include <string>
 #include <sstream>
 
-#include "DGB.h"
+#include "DGB_CombBLAS.h"
 
 using namespace std;
 using namespace combblas;
@@ -21,14 +21,12 @@ using Mat = SpParMat<int64_t, double, SpDCCols<int64_t, double>>;
 using Vec = FullyDistVec<int64_t, double>;
 
 // TODO(@altanh): delta-stepping?
-void SSSP(Mat &A, int64_t source, Vec &dist, Timer *timer)
+void SSSP(Mat &A, int64_t source, Vec &dist, dgb::Timer *timer)
 {
-    int myrank = get_myrank();
-
     int64_t n = A.getnrow();
     // cout << "n = " << n << endl;
 
-    timer->reset("init");
+    timer->reset("init_vec");
     dist = Vec(A.getcommgrid(), n, MAX_DIST); // init distances to MAX_DIST
     dist.SetElement(source, 0);               // set source distance to 0
     timer->elapsed();
@@ -43,6 +41,8 @@ void SSSP(Mat &A, int64_t source, Vec &dist, Timer *timer)
         // @manish: A is sparse but dist is dense. So runs a dense SpMV.
         Vec new_dist = SpMV<MinPlusSRing<double, double>>(A, dist);
 
+        // TODO(@altanh): it would be nicer if we could avoid this; VC frameworks can track #updated
+        //                values as they are computed.
         dist.EWiseApply(new_dist, [](double a, double b) { return static_cast<double>(a != b); });
         double updates = dist.Reduce(plus<double>(), 0.0);
         MAIN_COUT("iteration " << i << " done, " << updates << " updates" << std::endl);
@@ -75,7 +75,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    print_process_grid();
+    dgb::print_process_grid();
 
     string input_graph = argv[1];
     int64_t source = atoll(argv[2]);
@@ -113,16 +113,17 @@ int main(int argc, char *argv[])
         // A->AddLoops(0, true);
 
         // SSSP(*A, source, dist);
-        Timer timer(myrank);
+        dgb::Timer timer;
 
         shared_ptr<CommGrid> fullWorld;
         fullWorld.reset(new CommGrid(MPI_COMM_WORLD, 0, 0));
         Mat A(fullWorld);
 
         timer.reset("load");
-        load_mtx<int64_t, double, decltype(A), float>(&A, input_graph, /*transpose=*/true, /*pattern=*/false);
+        dgb::load_mtx<int64_t, double, decltype(A), float>(&A, input_graph, /*transpose=*/true, /*pattern=*/false);
         timer.elapsed();
 
+        // TODO(@altanh): this is slow! ideally, this should be fused into loading somehow
         timer.reset("set_diag");
         A.AddLoops(0, true);
         timer.elapsed();
@@ -130,9 +131,7 @@ int main(int argc, char *argv[])
         Vec dist(A.getcommgrid());
         SSSP(A, source, dist, &timer);
 
-        std::string timing_output = input_graph;
-        timing_output.replace(timing_output.find_last_of('.'), std::string::npos, ".sssp_time.csv");
-        timer.save(timing_output);
+        timer.save(dgb::get_timer_output(input_graph, "COMBBLAS", "sssp"));
     }
 
     MPI_Finalize();
