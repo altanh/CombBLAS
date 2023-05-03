@@ -47,7 +47,7 @@ double cblas_mergeconttime;
 double cblas_transvectime;
 double cblas_localspmvtime;
 
-#define ITERS 1
+// #define ITERS 1
 #define EDGEFACTOR 16
 using namespace std;
 using namespace combblas;
@@ -393,6 +393,27 @@ int main(int argc, char* argv[])
 		MPI_Barrier(MPI_COMM_WORLD);
 		double t1 = MPI_Wtime();
 
+		// try to load sources from file
+		vector<int64_t> sources = dgb::get_sources(argv[2]);
+		if (sources.empty() || argc > 3) {
+			if (argc < 4) {
+				MAIN_COUT("ERROR: No source specified" << std::endl);
+				MPI_Finalize();
+				return 1;
+			}
+			int64_t source = atoll(argv[3]);
+			sources = {source};  // use source from command line
+			MAIN_COUT("Using source from command line: " << source << std::endl);
+		} else {
+			MAIN_COUT("Using sources from file:");
+			for (auto source : sources) {
+				MAIN_COUT(" " << source);
+			}
+			MAIN_COUT(std::endl);
+		}
+
+		const int ITERS = sources.size();
+
 		// Now that every remaining vertex is non-isolated, randomly pick ITERS many of them as starting vertices
 		// #ifndef NOPERMUTE
 		// degrees = degrees(nonisov);	// fix the degrees array too
@@ -408,20 +429,22 @@ int main(int argc, char* argv[])
 #else
 		MTRand M;	// generate random numbers with Mersenne Twister 
 #endif
-		vector<double> loccands(ITERS);
+
+
+		// vector<double> loccands(ITERS);
 		vector<int64_t> loccandints(ITERS);
 		if(myrank == 0)
 		{
 			for(int i=0; i<ITERS; ++i) {
 				// loccands[i] = M.rand();
-				loccands[i] = stoi(argv[3]);  // use source from command line
+				loccandints[i] = sources[i];
 			}
-			copy(loccands.begin(), loccands.end(), ostream_iterator<double>(cout," ")); cout << endl;
-			transform(loccands.begin(), loccands.end(), loccands.begin(), bind2nd( multiplies<double>(), nver ));
+			// copy(loccands.begin(), loccands.end(), ostream_iterator<double>(cout," ")); cout << endl;
+			// transform(loccands.begin(), loccands.end(), loccands.begin(), bind2nd( multiplies<double>(), nver ));
 			
-			for(int i=0; i<ITERS; ++i)
-				loccandints[i] = static_cast<int64_t>(loccands[i]);
-			copy(loccandints.begin(), loccandints.end(), ostream_iterator<double>(cout," ")); cout << endl;
+			// for(int i=0; i<ITERS; ++i)
+			// 	loccandints[i] = static_cast<int64_t>(loccands[i]);
+			// copy(loccandints.begin(), loccandints.end(), ostream_iterator<double>(cout," ")); cout << endl;
 		}
 		MPI_Bcast(&(loccandints[0]), ITERS, MPIType<int64_t>(),0,MPI_COMM_WORLD);
 		for(int i=0; i<ITERS; ++i)

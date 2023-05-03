@@ -68,9 +68,9 @@ int main(int argc, char *argv[])
     MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
     MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
 
-    if (argc < 3)
+    if (argc < 2)
     {
-        cout << "Usage: " << argv[0] << " <input_graph> <source>" << endl;
+        cout << "Usage: " << argv[0] << " <input_graph> [source]" << endl;
         MPI_Finalize();
         return 1;
     }
@@ -78,7 +78,16 @@ int main(int argc, char *argv[])
     dgb::print_process_grid();
 
     string input_graph = argv[1];
-    int64_t source = atoll(argv[2]);
+
+    std::vector<int64_t> sources = dgb::get_sources(input_graph);
+    if (sources.empty() || argc > 2) {
+        if (argc < 3) {
+            MAIN_COUT("ERROR: no source specified" << endl);
+            MPI_Finalize();
+            return 1;
+        }
+        sources = {atoll(argv[2])};
+    }
 
     // TODO: Add loaders for binary graph files
     {
@@ -128,8 +137,11 @@ int main(int argc, char *argv[])
         A.AddLoops(0, true);
         timer.elapsed();
 
-        Vec dist(A.getcommgrid());
-        SSSP(A, source, dist, &timer);
+        for (auto source : sources) {
+            MAIN_COUT("running SSSP with source = " << source << endl);
+            Vec dist(A.getcommgrid());
+            SSSP(A, source, dist, &timer);
+        }
 
         timer.save(dgb::get_timer_output(input_graph, "COMBBLAS", "sssp"));
     }
