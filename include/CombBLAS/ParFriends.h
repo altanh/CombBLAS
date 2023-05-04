@@ -1234,7 +1234,145 @@ SpParMat<IU, NUO, UDERO> Mult_AnXBn_Overlap
 	return SpParMat<IU,NUO,UDERO> (C, GridC);		// return the result object
 }
 
-    
+
+
+/* ################## MASKED MATRIX MULTIPLICATION ################## */
+
+/**
+ * Parallel masked SpGEMM C<M>=A*B routine.
+ * Builds on top of Mult_AnXBn_Synch function which performs simple block broadcast
+ * for distributed matrix mult.
+*/
+template <typename SR, typename NUO, typename UDERO, typename IU, typename NU1, typename NU2, typename UDERA, typename UDERB> 
+SpParMat<IU, NUO, UDERO> Masked_Mult_AnXBn_Synch 
+		(SpParMat<IU,NU1,UDERA> & A, SpParMat<IU,NU2,UDERB> & B, SpParMat<IU,NUO,UDERO> & M, bool clearA = false, bool clearB = false )
+{
+    int myrank;
+    MPI_Comm_rank(MPI_COMM_WORLD,&myrank);
+	if(!CheckSpGEMMCompliance(A,B) )
+	{
+		return SpParMat< IU,NUO,UDERO >();
+	}
+	int stages, dummy; 	// last two parameters of ProductGrid are ignored for Synch multiplication
+	std::shared_ptr<CommGrid> GridC = ProductGrid((A.commGrid).get(), (B.commGrid).get(), stages, dummy, dummy);		
+	IU C_m = A.spSeq->getnrow();
+	IU C_n = B.spSeq->getncol();
+
+
+	IU ** ARecvSizes = SpHelper::allocate2D<IU>(UDERA::esscount, stages);
+	IU ** BRecvSizes = SpHelper::allocate2D<IU>(UDERB::esscount, stages);
+    IU ** MRecvSizes = SpHelper::allocate2D<IU>(UDERO::esscount, stages);
+	
+	SpParHelper::GetSetSizes( *(A.spSeq), ARecvSizes, (A.commGrid)->GetRowWorld());
+	SpParHelper::GetSetSizes( *(B.spSeq), BRecvSizes, (B.commGrid)->GetColWorld());
+    SpParHelper::GetSetSizes( *(M.spSeq), MRecvSizes, (M.commGrid)->GetWorld());
+
+	// Remotely fetched matrices are stored as pointers
+	UDERA * ARecv; 
+	UDERB * BRecv;
+    UDERO * MRecv;
+	std::vector< SpTuples<IU,NUO>  *> tomerge;
+
+	int Aself = (A.commGrid)->GetRankInProcRow();
+	int Bself = (B.commGrid)->GetRankInProcCol();	
+    int Mself = (M.commGrid)->GetRankInProcCol();
+	
+	for(int i = 0; i < stages; ++i) 
+	{
+        cout << "stage " << i << endl;
+        
+		std::vector<IU> ess;	
+		if(i == Aself)
+		{	
+			ARecv = A.spSeq;	// shallow-copy 
+		}
+		else
+		{
+			ess.resize(UDERA::esscount);
+			for(int j=0; j< UDERA::esscount; ++j)	
+			{
+				ess[j] = ARecvSizes[j][i];		// essentials of the ith matrix in this row	
+			}
+			ARecv = new UDERA();				// first, create the object
+		}
+		SpParHelper::BCastMatrix(GridC->GetRowWorld(), *ARecv, ess, i);	// then, receive its elements	
+		ess.clear();	
+		
+		if(i == Bself)
+		{
+			BRecv = B.spSeq;	// shallow-copy
+		}
+		else
+		{
+			ess.resize(UDERB::esscount);		
+			for(int j=0; j< UDERB::esscount; ++j)	
+			{
+				ess[j] = BRecvSizes[j][i];	
+			}	
+			BRecv = new UDERB();
+		}
+		SpParHelper::BCastMatrix(GridC->GetColWorld(), *BRecv, ess, i);	// then, receive its elements
+
+        if(i == Mself)
+        {
+            MRecv = M.spSeq;
+        }
+        else
+        {
+            ess.resize(UDERO::esscount);
+            for(int j=0; j< UDERO::esscount; ++j)
+            {
+                ess[j] = MRecvSizes[j][i];
+            }
+            MRecv = new UDERO();
+        }
+        SpParHelper::BCastMatrix(GridC->GetColWorld(), *MRecv, ess, i);
+
+        // print received matrices
+        // BRecv->PrintInfo();
+        // ARecv->PrintInfo();
+        // MRecv->PrintInfo();
+
+		SpTuples<IU,NUO> * C_cont = MaskedLocalSpGEMM<SR, NUO>
+						(*ARecv, *BRecv, *MRecv, // parameters themselves
+						i != Aself, 	// 'delete A' condition
+						i != Bself);	// 'delete B' condition
+		
+		if(!C_cont->isZero()) 
+			tomerge.push_back(C_cont);
+
+	}
+
+	if(clearA && A.spSeq != NULL) 
+	{	
+		delete A.spSeq;
+		A.spSeq = NULL;
+	}	
+	if(clearB && B.spSeq != NULL) 
+	{
+		delete B.spSeq;
+		B.spSeq = NULL;
+	}
+
+	SpHelper::deallocate2D(ARecvSizes, UDERA::esscount);
+	SpHelper::deallocate2D(BRecvSizes, UDERB::esscount);
+
+
+    SpTuples<IU,NUO> * C_tuples = MultiwayMerge<SR>(tomerge, C_m, C_n,false);
+    UDERO * C = new UDERO(*C_tuples, false);
+    delete C_tuples;
+
+	//if(!clearB)
+	//	const_cast< UDERB* >(B.spSeq)->Transpose();	// transpose back to original
+
+	return SpParMat<IU,NUO,UDERO> (C, GridC);		// return the result object
+}
+
+
+/* ########################################################################################## */
+
+
+
 /**
   * Estimate the maximum nnz needed to store in a process from all stages of SUMMA before reduction
   * @pre { Input matrices, A and B, should not alias }
