@@ -37,6 +37,8 @@
 #include <string>
 #include <sstream>
 
+#include "DGB_CombBLAS.h"
+
 int cblas_splits;
 
 double cblas_alltoalltime;
@@ -45,7 +47,7 @@ double cblas_mergeconttime;
 double cblas_transvectime;
 double cblas_localspmvtime;
 
-#define ITERS 16
+// #define ITERS 1
 #define EDGEFACTOR 16
 using namespace std;
 using namespace combblas;
@@ -120,6 +122,8 @@ int main(int argc, char* argv[])
 	int cblas_splits = 1;	
 #endif
     
+	dgb::Timer timer;
+
 	MPI_Comm_size(MPI_COMM_WORLD,&nprocs);
 	MPI_Comm_rank(MPI_COMM_WORLD,&myrank);
 	if(argc < 3)
@@ -144,29 +148,39 @@ int main(int argc, char* argv[])
 		// Declare objects
 		PSpMat_Bool A(fullWorld);
 		PSpMat_s32p64 Aeff(fullWorld);
-		FullyDistVec<int64_t, int64_t> degrees(fullWorld);	// degrees of vertices (including multi-edges and self-loops)
-		FullyDistVec<int64_t, int64_t> nonisov(fullWorld);	// id's of non-isolated (connected) vertices
+		// FullyDistVec<int64_t, int64_t> degrees(fullWorld);	// degrees of vertices (including multi-edges and self-loops)
+		// FullyDistVec<int64_t, int64_t> nonisov(fullWorld);	// id's of non-isolated (connected) vertices
 		unsigned scale;
 		OptBuf<int32_t, int64_t> optbuf;	// let indices be 32-bits
 		bool scramble = false;
 
 		if(string(argv[1]) == string("Input")) // input option
 		{
-			A.ReadDistribute(string(argv[2]), 0);	// read it from file
+			// A.ReadDistribute(string(argv[2]), 0);	// read it from file
+			timer.reset("load");
+			dgb::load_mtx<int64_t, bool, decltype(A)>(&A, argv[2], /*transpose=*/false, /*pattern=*/true);
+			timer.elapsed();
 			SpParHelper::Print("Read input\n");
 
-			PSpMat_Int64 * G = new PSpMat_Int64(A); 
-			G->Reduce(degrees, Row, plus<int64_t>(), static_cast<int64_t>(0));	// identity is 0 
-			delete G;
+			// timer.reset("degrees");
+			// PSpMat_Int64 * G = new PSpMat_Int64(A); 
+			// G->Reduce(degrees, Row, plus<int64_t>(), static_cast<int64_t>(0));	// identity is 0 
+			// delete G;
+			// timer.elapsed();
 
+			timer.reset("symmetricize");
 			Symmetricize(A);	// A += A';
-			FullyDistVec<int64_t, int64_t> * ColSums = new FullyDistVec<int64_t, int64_t>(A.getcommgrid());
-			A.Reduce(*ColSums, Column, plus<int64_t>(), static_cast<int64_t>(0)); 	// plus<int64_t> matches the type of the output vector
-			nonisov = ColSums->FindInds(bind2nd(greater<int64_t>(), 0));	// only the indices of non-isolated vertices
-			delete ColSums;
-			A = A(nonisov, nonisov);
+			timer.elapsed();
+
+			timer.reset("prune");
+			// FullyDistVec<int64_t, int64_t> * ColSums = new FullyDistVec<int64_t, int64_t>(A.getcommgrid());
+			// A.Reduce(*ColSums, Column, plus<int64_t>(), static_cast<int64_t>(0)); 	// plus<int64_t> matches the type of the output vector
+			// nonisov = ColSums->FindInds(bind2nd(greater<int64_t>(), 0));	// only the indices of non-isolated vertices
+			// delete ColSums;
+			// A = A(nonisov, nonisov);
 			Aeff = PSpMat_s32p64(A);
 			A.FreeMemory();
+			timer.elapsed();
 			SpParHelper::Print("Symmetricized and pruned\n");
 
                         Aeff.OptimizeForGraph500(optbuf);               // Should be called before threading is activated
@@ -177,6 +191,7 @@ int main(int argc, char* argv[])
                         Aeff.ActivateThreading(cblas_splits);
                 #endif
 		}
+		/*
 		else if(string(argv[1]) == string("Binary"))
 		{
 			uint64_t n, m;
@@ -368,6 +383,7 @@ int main(int argc, char* argv[])
 			k1timeinfo << (t2-t1) - (redtf-redts) << " seconds elapsed for Kernel #1" << endl;
 			SpParHelper::Print(k1timeinfo.str());
 		}
+		*/
 		Aeff.PrintInfo();
 		float balance = Aeff.LoadImbalance();
 		ostringstream outs;
@@ -377,32 +393,58 @@ int main(int argc, char* argv[])
 		MPI_Barrier(MPI_COMM_WORLD);
 		double t1 = MPI_Wtime();
 
+		// try to load sources from file
+		vector<int64_t> sources = dgb::get_sources(argv[2]);
+		if (sources.empty() || argc > 3) {
+			if (argc < 4) {
+				MAIN_COUT("ERROR: No source specified" << std::endl);
+				MPI_Finalize();
+				return 1;
+			}
+			int64_t source = atoll(argv[3]);
+			sources = {source};  // use source from command line
+			MAIN_COUT("Using source from command line: " << source << std::endl);
+		} else {
+			MAIN_COUT("Using sources from file:");
+			for (auto source : sources) {
+				MAIN_COUT(" " << source);
+			}
+			MAIN_COUT(std::endl);
+		}
+
+		const int ITERS = sources.size();
+
 		// Now that every remaining vertex is non-isolated, randomly pick ITERS many of them as starting vertices
-		#ifndef NOPERMUTE
-		degrees = degrees(nonisov);	// fix the degrees array too
-		degrees.PrintInfo("Degrees array");
-		#endif
+		// #ifndef NOPERMUTE
+		// degrees = degrees(nonisov);	// fix the degrees array too
+		// degrees.PrintInfo("Degrees array");
+		// #endif
 		// degrees.DebugPrint();
 		FullyDistVec<int64_t, int64_t> Cands(ITERS, 0);
-		double nver = (double) degrees.TotalLength();
+		// double nver = (double) degrees.TotalLength();
+		double nver = (double) Aeff.getncol();
 
 #ifdef DETERMINISTIC
 		MTRand M(1);
 #else
 		MTRand M;	// generate random numbers with Mersenne Twister 
 #endif
-		vector<double> loccands(ITERS);
+
+
+		// vector<double> loccands(ITERS);
 		vector<int64_t> loccandints(ITERS);
 		if(myrank == 0)
 		{
-			for(int i=0; i<ITERS; ++i)
-				loccands[i] = M.rand();
-			copy(loccands.begin(), loccands.end(), ostream_iterator<double>(cout," ")); cout << endl;
-			transform(loccands.begin(), loccands.end(), loccands.begin(), bind2nd( multiplies<double>(), nver ));
+			for(int i=0; i<ITERS; ++i) {
+				// loccands[i] = M.rand();
+				loccandints[i] = sources[i];
+			}
+			// copy(loccands.begin(), loccands.end(), ostream_iterator<double>(cout," ")); cout << endl;
+			// transform(loccands.begin(), loccands.end(), loccands.begin(), bind2nd( multiplies<double>(), nver ));
 			
-			for(int i=0; i<ITERS; ++i)
-				loccandints[i] = static_cast<int64_t>(loccands[i]);
-			copy(loccandints.begin(), loccandints.end(), ostream_iterator<double>(cout," ")); cout << endl;
+			// for(int i=0; i<ITERS; ++i)
+			// 	loccandints[i] = static_cast<int64_t>(loccands[i]);
+			// copy(loccandints.begin(), loccandints.end(), ostream_iterator<double>(cout," ")); cout << endl;
 		}
 		MPI_Bcast(&(loccandints[0]), ITERS, MPIType<int64_t>(),0,MPI_COMM_WORLD);
 		for(int i=0; i<ITERS; ++i)
@@ -411,7 +453,9 @@ int main(int argc, char* argv[])
 		}
 
 		#define MAXTRIALS 1
-		for(int trials =0; trials < MAXTRIALS; trials++)	// try different algorithms for BFS
+		const int maxtrials = dgb::get_trials("COMBBLAS");
+
+		for(int trials =0; trials < maxtrials; trials++)	// try different algorithms for BFS
 		{
 			cblas_allgathertime = 0;
 			cblas_alltoalltime = 0;
@@ -423,6 +467,7 @@ int main(int argc, char* argv[])
 			double MTEPS[ITERS]; double INVMTEPS[ITERS]; double TIMES[ITERS]; double EDGES[ITERS];
 			for(int i=0; i<ITERS; ++i)
 			{
+				timer.reset("bfs");
 				// FullyDistVec ( shared_ptr<CommGrid> grid, IT globallen, NT initval);
 				FullyDistVec<int64_t, int64_t> parents ( Aeff.getcommgrid(), Aeff.getncol(), (int64_t) -1);	// identity is -1
 
@@ -445,29 +490,31 @@ int main(int argc, char* argv[])
 				MPI_Barrier(MPI_COMM_WORLD);
 				double t2 = MPI_Wtime();
 	
-				FullyDistSpVec<int64_t, int64_t> parentsp = parents.Find(bind2nd(greater<int64_t>(), -1));
-				parentsp.Apply(myset<int64_t>(1));
+				// FullyDistSpVec<int64_t, int64_t> parentsp = parents.Find(bind2nd(greater<int64_t>(), -1));
+				// parentsp.Apply(myset<int64_t>(1));
 	
 				// we use degrees on the directed graph, so that we don't count the reverse edges in the teps score
-				int64_t nedges = EWiseMult(parentsp, degrees, false, (int64_t) 0).Reduce(plus<int64_t>(), (int64_t) 0);
+				// int64_t nedges = EWiseMult(parentsp, degrees, false, (int64_t) 0).Reduce(plus<int64_t>(), (int64_t) 0);
 	
-				ostringstream outnew;
-				outnew << i << "th starting vertex was " << Cands[i] << endl;
-				outnew << "Number iterations: " << iterations << endl;
-				outnew << "Number of vertices found: " << parentsp.Reduce(plus<int64_t>(), (int64_t) 0) << endl; 
-				outnew << "Number of edges traversed: " << nedges << endl;
-				outnew << "BFS time: " << t2-t1 << " seconds" << endl;
-				outnew << "MTEPS: " << static_cast<double>(nedges) / (t2-t1) / 1000000.0 << endl;
-				outnew << "Total communication (average so far): " << (cblas_allgathertime + cblas_alltoalltime) / (i+1) << endl;
-				TIMES[i] = t2-t1;
-				EDGES[i] = nedges;
-				MTEPS[i] = static_cast<double>(nedges) / (t2-t1) / 1000000.0;
-				SpParHelper::Print(outnew.str());
+				// ostringstream outnew;
+				// outnew << i << "th starting vertex was " << Cands[i] << endl;
+				// outnew << "Number iterations: " << iterations << endl;
+				// outnew << "Number of vertices found: " << parentsp.Reduce(plus<int64_t>(), (int64_t) 0) << endl; 
+				// outnew << "Number of edges traversed: " << nedges << endl;
+				// outnew << "BFS time: " << t2-t1 << " seconds" << endl;
+				// outnew << "MTEPS: " << static_cast<double>(nedges) / (t2-t1) / 1000000.0 << endl;
+				// outnew << "Total communication (average so far): " << (cblas_allgathertime + cblas_alltoalltime) / (i+1) << endl;
+				// TIMES[i] = t2-t1;
+				// EDGES[i] = nedges;
+				// MTEPS[i] = static_cast<double>(nedges) / (t2-t1) / 1000000.0;
+				// SpParHelper::Print(outnew.str());
+				timer.elapsed();
 			}
 			SpParHelper::Print("Finished\n");
 			ostringstream os;
 			MPI_Pcontrol(-1,"BFS");
 			
+			timer.save(dgb::get_timer_output(argv[2], "COMBBLAS", "bfs"));
 
 			os << "Per iteration communication times: " << endl;
 			os << "AllGatherv: " << cblas_allgathertime / ITERS << endl;

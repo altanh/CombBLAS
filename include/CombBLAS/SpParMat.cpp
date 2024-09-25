@@ -617,17 +617,18 @@ void SpParMat< IT,NT,DER >::Dump(std::string filename) const
 
 
 template <class IT, class NT, class DER>
-void SpParMat< IT,NT,DER >::ParallelBinaryWrite(std::string filename) const
+void SpParMat< IT,NT,DER >::ParallelBinaryWrite(std::string filename, bool pattern) const
 {
     int myrank = commGrid->GetRank();
     int nprocs = commGrid->GetSize();
     IT totalm = getnrow();
     IT totaln = getncol();
     IT totnnz = getnnz();
-        
+
+	const size_t nt_size = pattern ? 0 : sizeof(NT);
     
     const int64_t headersize = 52; // 52 is the size of the header, 4 characters + 6*8 integer space
-    int64_t elementsize = 2*sizeof(IT)+sizeof(NT);
+    int64_t elementsize = 2 * sizeof(IT) + nt_size;
     int64_t localentries =  getlocalnnz();
     int64_t localbytes = localentries*elementsize ;   // localsize in bytes
     if(myrank == 0)
@@ -646,7 +647,8 @@ void SpParMat< IT,NT,DER >::ParallelBinaryWrite(std::string filename) const
         char start[5] = "HKDT";
         uint64_t hdr[6];
         hdr[0] = 2;    // version: 2.0
-        hdr[1] = sizeof(NT);   // object size
+        // hdr[1] = sizeof(NT);   // object size
+		hdr[1] = 2 * sizeof(IT) + nt_size;   // object size
         hdr[2] = 0;    // format: binary
         hdr[3] = totalm;    // number of rows
         hdr[4] = totaln;    // number of columns
@@ -672,8 +674,10 @@ void SpParMat< IT,NT,DER >::ParallelBinaryWrite(std::string filename) const
             NT glvalue = nzit.value();
             std::memmove(localdata+writtensofar, &glrowid, sizeof(IT));
             std::memmove(localdata+writtensofar+sizeof(IT), &glcolid, sizeof(IT));
-            std::memmove(localdata+writtensofar+2*sizeof(IT), &glvalue, sizeof(NT));
-            writtensofar += (2*sizeof(IT) + sizeof(NT));
+			if (!pattern) {
+				std::memmove(localdata+writtensofar+2*sizeof(IT), &glvalue, nt_size);
+			}
+            writtensofar += 2*sizeof(IT) + nt_size;
         }
     }
 #ifdef IODEBUG
@@ -4454,7 +4458,7 @@ void SpParMat< IT,NT,DER >::ReadDistribute (const std::string & filename, int ma
 			oput << "Total nnz: " << total_nnz << " OFFSET : " << read_offset << " entries to read: " << entriestoread << std::endl;
 			oput.close();
 			#endif
-			
+
 			AllocateSetBuffers(rows, cols, vals,  rcurptrs, ccurptrs, rowneighs, colneighs, buffpercolneigh);
 			ReadAllMine(binfile, rows, cols, vals, localtuples, rcurptrs, ccurptrs, rdispls, cdispls, m_perproc, n_perproc, 
 				rowneighs, colneighs, buffperrowneigh, buffpercolneigh, entriestoread, handler, rankinrow, transpose);
@@ -4518,7 +4522,7 @@ void SpParMat< IT,NT,DER >::ReadDistribute (const std::string & filename, int ma
             oput << "Total nnz: " << total_nnz << " total_m : " << total_m << " recvcount: " << recvcount << std::endl;
             oput.close();
             #endif
-            
+
 			// create space for incoming data ... 
 			IT * temprows = new IT[recvcount];
 			IT * tempcols = new IT[recvcount];
@@ -4632,9 +4636,14 @@ void SpParMat<IT,NT,DER>::ReadAllMine(FILE * binfile, IT * & rows, IT * & cols, 
 	IT cnz = 0;
 	IT temprow, tempcol;
 	NT tempval;
-	int finishedglobal = 1;
-	while(cnz < entriestoread && !feof(binfile))	// this loop will execute at least once
+	int finishedglobal = 0;
+	while(cnz < entriestoread)	// this loop will execute at least once
 	{
+		if (feof(binfile))	// should not happen
+		{
+			std::cerr << "Error: Reached end of file before reading " << entriestoread << " entries" << std::endl;
+			exit(EXIT_FAILURE);
+		}
 		handler.binaryfill(binfile, temprow , tempcol, tempval);
         
 		if (transpose)
@@ -4691,6 +4700,12 @@ void SpParMat<IT,NT,DER>::ReadAllMine(FILE * binfile, IT * & rows, IT * & cols, 
 			}
 		} // end_if for "send buffer is full" case 
 		++cnz;
+		// print progress in 5% increments
+		if (cnz % (entriestoread/20) == 0 && commGrid->GetRank() == 0)
+		{
+			// print percentage of entries read
+			std::cout << "read " << (cnz*100)/entriestoread << "%" << std::endl;
+		}
 	}
 
 	// signal the end to row neighbors

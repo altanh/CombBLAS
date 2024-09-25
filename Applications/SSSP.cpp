@@ -8,11 +8,7 @@
 #include <string>
 #include <sstream>
 
-double cblas_alltoalltime;
-double cblas_allgathertime;
-double cblas_mergeconttime;
-double cblas_transvectime;
-double cblas_localspmvtime;
+#include "DGB_CombBLAS.h"
 
 using namespace std;
 using namespace combblas;
@@ -24,68 +20,43 @@ MTRand GlobalMT(123);
 using Mat = SpParMat<int64_t, double, SpDCCols<int64_t, double>>;
 using Vec = FullyDistVec<int64_t, double>;
 
-// print the SpParMat
-template <typename IT, typename NT>
-void printSpParMat(SpParMat<IT, NT, SpDCCols<IT, NT>> &A)
+// TODO(@altanh): delta-stepping?
+void SSSP(Mat &A, int64_t source, Vec &dist, dgb::Timer *timer)
 {
-    // get local matrix
-    SpDCCols<IT, NT> localMat = A.seq();
-    int count = 0;
-    int total = 0;
-
-    // temporary vector of vector to store the matrix
-    vector<vector<NT>> temp(A.getnrow(), vector<NT>(A.getncol(), 0));
-
-    // use SpColIter to iterate over cols of local matrix
-    for (SpDCCols<int64_t, double>::SpColIter colit = A.seq().begcol(); colit != A.seq().endcol(); ++colit)
-    {
-        for (SpDCCols<int64_t, double>::SpColIter::NzIter nzit = A.seq().begnz(colit); nzit != A.seq().endnz(colit); ++nzit)
-        {
-            count++;
-            temp[nzit.rowid()][colit.colid()] = nzit.value();
-        }
-    }
-
-    // print the temp vector
-    for (auto row : temp)
-    {
-        for (auto col : row)
-        {
-            cout << setw(5) << col << " ";
-        }
-        cout << endl;
-    }
-}
-
-
-
-void SSSP(Mat &A, int64_t source, Vec &dist)
-{
-    int nprocs, myrank;
-    MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
-    MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
-
     int64_t n = A.getnrow();
-    cout << "n = " << n << endl;
+    // cout << "n = " << n << endl;
 
+    timer->reset("init_vec");
     dist = Vec(A.getcommgrid(), n, MAX_DIST); // init distances to MAX_DIST
     dist.SetElement(source, 0);               // set source distance to 0
+    timer->elapsed();
 
-    cout << "Starting SSSP ..." << endl;
-
+    // cout << "Starting SSSP ..." << endl;
+    timer->reset("sssp");
     // bellman-ford
     for (int64_t i = 0; i < n - 1; i++)
     {
         // printSpParMat(A);
         // dist.DebugPrint();
         // @manish: A is sparse but dist is dense. So runs a dense SpMV.
-        dist = SpMV<MinPlusSRing<double, double>>(A, dist);
-    }
+        Vec new_dist = SpMV<MinPlusSRing<double, double>>(A, dist);
 
-    for (int i = 0; i < n; i++)
-    {
-        cout << "Shortest distance from " << source << " to " << i << " is " << dist[i] << endl;
+        // TODO(@altanh): it would be nicer if we could avoid this; VC frameworks can track #updated
+        //                values as they are computed.
+        dist.EWiseApply(new_dist, [](double a, double b) { return static_cast<double>(a != b); });
+        double updates = dist.Reduce(plus<double>(), 0.0);
+        MAIN_COUT("iteration " << i << " done, " << updates << " updates" << std::endl);
+        if (updates == 0.0) {
+            break;
+        }
+
+        dist = new_dist;
     }
+    timer->elapsed();
+    // for (int i = 0; i < n; i++)
+    // {
+    //     cout << "Shortest distance from " << source << " to " << i << " is " << dist[i] << endl;
+    // }
 }
 
 
@@ -96,39 +67,83 @@ int main(int argc, char *argv[])
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
     MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
+
+    if (argc < 2)
+    {
+        cout << "Usage: " << argv[0] << " <input_graph> [source]" << endl;
+        MPI_Finalize();
+        return 1;
+    }
+
+    dgb::print_process_grid();
+
+    string input_graph = argv[1];
+
+    std::vector<int64_t> sources = dgb::get_sources(input_graph);
+    if (sources.empty() || argc > 2) {
+        if (argc < 3) {
+            MAIN_COUT("ERROR: no source specified" << endl);
+            MPI_Finalize();
+            return 1;
+        }
+        sources = {atoll(argv[2])};
+    }
+
     // TODO: Add loaders for binary graph files
     {
-        int source = 0;
+        // int source = 0;
 
-        unsigned scale = 10; // 2^scale vertices
-        double initiator[4] = {.57, .19, .19, .05};
+        // unsigned scale = 10; // 2^scale vertices
+        // double initiator[4] = {.57, .19, .19, .05};
 
-        cout << "[Graph500] generating random graph ..." << endl;
+        // cout << "[Graph500] generating random graph ..." << endl;
 
-        double t01 = MPI_Wtime();
-        double t02;
+        // double t01 = MPI_Wtime();
+        // double t02;
 
-        DistEdgeList<int64_t> *DEL = new DistEdgeList<int64_t>();
-        DEL->GenGraph500Data(initiator, scale, EDGEFACTOR, true, true);
-        MPI_Barrier(MPI_COMM_WORLD);
+        // DistEdgeList<int64_t> *DEL = new DistEdgeList<int64_t>();
+        // DEL->GenGraph500Data(initiator, scale, EDGEFACTOR, true, true);
+        // MPI_Barrier(MPI_COMM_WORLD);
 
-        t02 = MPI_Wtime();
-        ostringstream tinfo;
-        tinfo << "Generation took " << t02 - t01 << " seconds" << endl;
+        // t02 = MPI_Wtime();
+        // ostringstream tinfo;
+        // tinfo << "Generation took " << t02 - t01 << " seconds" << endl;
 
-        // adjacency matrix
-        Mat *A = new Mat(*DEL, false);
-        delete DEL;
-        int64_t removed = A->RemoveLoops();
+        // // adjacency matrix
+        // Mat *A = new Mat(*DEL, false);
+        // delete DEL;
+        // int64_t removed = A->RemoveLoops();
 
-        // distance vector from source to all nodes
-        Vec dist;
-        A->Transpose();
+        // // distance vector from source to all nodes
+        // Vec dist;
+        // A->Transpose();
 
-        // set diagonal to 0
-        A->AddLoops(0, true);
+        // // set diagonal to 0
+        // A->AddLoops(0, true);
 
-        SSSP(*A, source, dist);
+        // SSSP(*A, source, dist);
+        dgb::Timer timer;
+
+        shared_ptr<CommGrid> fullWorld;
+        fullWorld.reset(new CommGrid(MPI_COMM_WORLD, 0, 0));
+        Mat A(fullWorld);
+
+        timer.reset("load");
+        dgb::load_mtx<int64_t, double, decltype(A), float>(&A, input_graph, /*transpose=*/true, /*pattern=*/false);
+        timer.elapsed();
+
+        // TODO(@altanh): this is slow! ideally, this should be fused into loading somehow
+        timer.reset("set_diag");
+        A.AddLoops(0, true);
+        timer.elapsed();
+
+        for (auto source : sources) {
+            MAIN_COUT("running SSSP with source = " << source << endl);
+            Vec dist(A.getcommgrid());
+            SSSP(A, source, dist, &timer);
+        }
+
+        timer.save(dgb::get_timer_output(input_graph, "COMBBLAS", "sssp"));
     }
 
     MPI_Finalize();

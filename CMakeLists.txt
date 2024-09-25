@@ -20,6 +20,7 @@ endif()
 # set include directories
 target_include_directories(CombBLAS PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
 target_include_directories(CombBLAS PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/psort-1.0/include> $<INSTALL_INTERFACE:include>)
+target_include_directories(CombBLAS PUBLIC $ENV{DGB_HOME}/include)  # DGB
 target_include_directories(CombBLAS PRIVATE include/CombBLAS)
 
 # MPI and OpenMP dependencies
